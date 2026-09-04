@@ -57,3 +57,7 @@ th.num {
 tbody tr:hover td {
   background: #f8fbff;
 }
+
+tbody tr.selected-municipality td {
+  background: #eff6ff;
+}

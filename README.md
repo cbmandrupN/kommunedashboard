@@ -15,7 +15,7 @@ webserver.
 
 ## Datagrundlag
 
-Dashboardet tæller unikke energimærker og viser deres udløbsår. Den reducerede
+Dashboardet tæller bygninger, hvor energimærket udløber, og viser deres udløbsår. Den reducerede
 `data/municipality-inventory.json.gz` indeholder kun kommune, CVR, kommunekode, BFE,
 bygningsnummer og areal. Adresser og øvrige råfelter offentliggøres ikke.
 

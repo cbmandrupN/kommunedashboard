@@ -28,7 +28,6 @@ const YEARS = [
 type Year = typeof YEARS[number]
 type Horizon = Year
 type Bucket = 'expired' | Year
-type Basis = 'labels' | 'buildings' | 'area'
 type Metric = Record<Bucket, number>
 type SortKey = 'name' | 'selected' | 'total'
 
@@ -36,7 +35,11 @@ type Municipality = {
   name: string
   cvr: string
   municipalityCode: string
-  metrics: Record<Basis, Metric>
+  metrics: {
+    labels: Metric
+    buildings: Metric
+    area: Metric
+  }
   unlabelled: { buildings: number; area: number }
 }
 
@@ -46,7 +49,11 @@ type DashboardData = {
   asOf: string
   source: string
   years: Year[]
-  totals: Record<Basis, Metric>
+  totals: {
+    labels: Metric
+    buildings: Metric
+    area: Metric
+  }
   municipalities: Municipality[]
   quality: {
     municipalityCount: number
@@ -78,12 +85,6 @@ const horizonLabels: Record<Horizon, string> = {
   '2037': 'Udløber i 2037',
 }
 
-const basisLabels: Record<Basis, string> = {
-  labels: 'Energimærker',
-  buildings: 'Bygninger',
-  area: 'Kvadratmeter',
-}
-
 const chartColors: Record<Horizon, string> = {
   '2026': '#f97316',
   '2027': '#eab308',
@@ -99,21 +100,19 @@ const chartColors: Record<Horizon, string> = {
   '2037': '#9333ea',
 }
 
-function valueFor(row: Municipality, basis: Basis, horizon: Horizon) {
-  return row.metrics[basis][horizon]
+function valueFor(row: Municipality, horizon: Horizon) {
+  return row.metrics.buildings[horizon]
 }
 
-function totalFor(row: Municipality, basis: Basis) {
+function totalFor(row: Municipality) {
   return YEARS.reduce(
-    (sum, bucket) => sum + row.metrics[basis][bucket],
+    (sum, bucket) => sum + row.metrics.buildings[bucket],
     0,
   )
 }
 
-function formatValue(value: number, basis: Basis) {
-  if (basis === 'area') return `${numberFormat.format(value)} m²`
-  if (basis === 'buildings') return `${numberFormat.format(value)} byg.`
-  return `${numberFormat.format(value)} mærker`
+function formatBuildings(value: number) {
+  return `${numberFormat.format(value)} bygninger`
 }
 
 function downloadCsv(rows: Municipality[]) {
@@ -122,24 +121,23 @@ function downloadCsv(rows: Municipality[]) {
     row.name,
     row.cvr,
     row.municipalityCode,
-    ...YEARS.map((year) => row.metrics.labels[year]),
+    ...YEARS.map((year) => row.metrics.buildings[year]),
   ].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(';'))
   const blob = new Blob([`\uFEFF${[header.join(';'), ...lines].join('\n')}`], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `udloebsplan-energimaerker-${dashboard.asOf}.csv`
+  anchor.download = `udloebsplan-bygninger-${dashboard.asOf}.csv`
   anchor.click()
   URL.revokeObjectURL(url)
 }
 
 export default function App() {
-  const [basis, setBasis] = useState<Basis>('labels')
   const [horizon, setHorizon] = useState<Horizon>('2026')
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('selected')
   const [sortDescending, setSortDescending] = useState(true)
-  const totals = dashboard.totals[basis]
+  const totals = dashboard.totals.buildings
 
   const selectHorizon = (value: Horizon) => {
     setHorizon(value)
@@ -154,16 +152,16 @@ export default function App() {
         const matchesQuery = !normalizedQuery
           || row.name.toLocaleLowerCase('da-DK').includes(normalizedQuery)
           || row.cvr.includes(normalizedQuery)
-        return matchesQuery && valueFor(row, basis, horizon) > 0
+        return matchesQuery && valueFor(row, horizon) > 0
       })
       .sort((a, b) => {
         let result = 0
         if (sortKey === 'name') result = a.name.localeCompare(b.name, 'da')
-        if (sortKey === 'selected') result = valueFor(a, basis, horizon) - valueFor(b, basis, horizon)
-        if (sortKey === 'total') result = totalFor(a, basis) - totalFor(b, basis)
+        if (sortKey === 'selected') result = valueFor(a, horizon) - valueFor(b, horizon)
+        if (sortKey === 'total') result = totalFor(a) - totalFor(b)
         return sortDescending ? -result : result
       })
-  }, [basis, horizon, query, sortDescending, sortKey])
+  }, [horizon, query, sortDescending, sortKey])
 
   const timelineData = YEARS.map((bucket) => ({
     name: bucket,
@@ -173,10 +171,10 @@ export default function App() {
   }))
 
   const affectedMunicipalities = municipalities.filter(
-    (row) => valueFor(row, basis, horizon) > 0,
+    (row) => valueFor(row, horizon) > 0,
   ).length
   const nextPeak = YEARS.reduce((best, year) => (
-    dashboard.totals.labels[year] > dashboard.totals.labels[best] ? year : best
+    dashboard.totals.buildings[year] > dashboard.totals.buildings[best] ? year : best
   ), YEARS[0])
   const sourceDate = dateFormat.format(new Date(`${dashboard.asOf}T12:00:00`))
 
@@ -198,7 +196,7 @@ export default function App() {
             </div>
             <div>
               <div className="text-sm font-semibold text-slate-950">Kommunedashboard</div>
-              <div className="text-[11px] text-slate-500">Planlægning af energimærker</div>
+              <div className="text-[11px] text-slate-500">Planlægning af bygningers energimærker</div>
             </div>
           </div>
           <div className="hidden text-xs text-slate-500 sm:block">Datagrundlag · {sourceDate}</div>
@@ -214,26 +212,12 @@ export default function App() {
                 <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-300">
                   <MapPin size={14} /> National udløbsplan
                 </div>
-                <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Hvornår skal kommunerne have nye energimærker?</h1>
+                <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Hvornår udløber bygningernes energimærker?</h1>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                  Klik på et år og se de kommuner, der har flest energimærker til fornyelse.
+                  Klik på et år og se de kommuner, der har flest bygninger, hvor energimærket udløber.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex rounded-lg border border-white/15 bg-white/5 p-1">
-                  {(Object.keys(basisLabels) as Basis[]).map((value) => (
-                    <button
-                      key={value}
-                      onClick={() => setBasis(value)}
-                      className={cn(
-                        'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
-                        basis === value ? 'bg-white text-slate-900' : 'text-slate-300 hover:text-white',
-                      )}
-                    >
-                      {basisLabels[value]}
-                    </button>
-                  ))}
-                </div>
                 <Button variant="secondary" size="sm" onClick={() => downloadCsv(filteredRows)}>
                   <Download size={14} /> Eksportér plan
                 </Button>
@@ -246,8 +230,8 @@ export default function App() {
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløber i 2026"
-            value={formatValue(dashboard.totals.labels['2026'], 'labels')}
-            note={`${municipalities.filter((row) => row.metrics.labels['2026'] > 0).length} kommuner`}
+            value={formatBuildings(dashboard.totals.buildings['2026'])}
+            note={`${municipalities.filter((row) => row.metrics.buildings['2026'] > 0).length} kommuner`}
             tone="orange"
             active={horizon === '2026'}
             onClick={() => selectHorizon('2026')}
@@ -255,8 +239,8 @@ export default function App() {
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløber i 2027"
-            value={formatValue(dashboard.totals.labels['2027'], 'labels')}
-            note={`${municipalities.filter((row) => row.metrics.labels['2027'] > 0).length} kommuner`}
+            value={formatBuildings(dashboard.totals.buildings['2027'])}
+            note={`${municipalities.filter((row) => row.metrics.buildings['2027'] > 0).length} kommuner`}
             tone="yellow"
             active={horizon === '2027'}
             onClick={() => selectHorizon('2027')}
@@ -264,8 +248,8 @@ export default function App() {
           <DeadlineCard
             icon={<CheckCircle2 size={18} />}
             label="Største kommende år"
-            value={`${nextPeak} · ${numberFormat.format(dashboard.totals.labels[nextPeak])}`}
-            note="unikke energimærker"
+            value={`${nextPeak} · ${numberFormat.format(dashboard.totals.buildings[nextPeak])}`}
+            note="bygninger, hvor energimærket udløber"
             tone="green"
             active={horizon === nextPeak}
             onClick={() => selectHorizon(nextPeak)}
@@ -275,7 +259,7 @@ export default function App() {
         <Card className="p-5">
           <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-[15px] font-semibold text-slate-900">Udløb af energimærker frem til 2037</h2>
+              <h2 className="text-[15px] font-semibold text-slate-900">Bygninger, hvor energimærket udløber frem til 2037</h2>
               <p className="mt-1 text-xs text-slate-500">Klik på en søjle for at filtrere kommunerne og sortere efter flest udløb.</p>
             </div>
             <div className="rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
@@ -288,12 +272,12 @@ export default function App() {
               <XAxis dataKey="name" interval={0} fontSize={11} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} />
               <YAxis tickFormatter={(value) => compactFormat.format(Number(value))} width={54} fontSize={11} tickLine={false} axisLine={false} />
               <Tooltip
-                formatter={(value) => formatValue(Number(value), basis)}
+                formatter={(value) => formatBuildings(Number(value))}
                 labelFormatter={(label) => `Udløber i ${label}`}
               />
               <Bar
                 dataKey="value"
-                name={basisLabels[basis]}
+                name="Bygninger"
                 radius={[5, 5, 0, 0]}
                 maxBarSize={72}
                 minPointSize={3}
@@ -316,7 +300,7 @@ export default function App() {
             <div className="mr-auto">
               <h2 className="text-[15px] font-semibold text-slate-900">Kommuner med udløb i den valgte periode</h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                {affectedMunicipalities} kommuner · {formatValue(totals[horizon], basis)} · {horizonLabels[horizon]}
+                {affectedMunicipalities} kommuner · {formatBuildings(totals[horizon])} · {horizonLabels[horizon]}
               </p>
             </div>
             <div className="relative w-full lg:w-72">
@@ -338,10 +322,7 @@ export default function App() {
               <thead>
                 <tr>
                   <SortableHeader label="Kommune" active={sortKey === 'name'} descending={sortDescending} onClick={() => setSort('name')} />
-                  <SortableHeader label={`${basisLabels[basis]} · ${horizon}`} active={sortKey === 'selected'} descending={sortDescending} onClick={() => setSort('selected')} align="right" />
-                  {basis !== 'labels' && <th className="num">Energimærker</th>}
-                  {basis !== 'buildings' && <th className="num">Bygninger</th>}
-                  {basis !== 'area' && <th className="num">Areal</th>}
+                  <SortableHeader label={`Bygninger · ${horizon}`} active={sortKey === 'selected'} descending={sortDescending} onClick={() => setSort('selected')} align="right" />
                   <SortableHeader label="Alle perioder" active={sortKey === 'total'} descending={sortDescending} onClick={() => setSort('total')} align="right" />
                 </tr>
               </thead>
@@ -353,11 +334,8 @@ export default function App() {
                         <div className="font-medium text-slate-900">{row.name}</div>
                         <div className="text-[11px] text-slate-400">CVR {row.cvr} · kommunekode {row.municipalityCode}</div>
                       </td>
-                      <td className="num font-semibold text-slate-950">{formatValue(valueFor(row, basis, horizon), basis)}</td>
-                      {basis !== 'labels' && <td className="num">{numberFormat.format(row.metrics.labels[horizon])}</td>}
-                      {basis !== 'buildings' && <td className="num">{numberFormat.format(row.metrics.buildings[horizon])}</td>}
-                      {basis !== 'area' && <td className="num">{numberFormat.format(row.metrics.area[horizon])} m²</td>}
-                      <td className="num text-slate-500">{formatValue(totalFor(row, basis), basis)}</td>
+                      <td className="num font-semibold text-slate-950">{formatBuildings(valueFor(row, horizon))}</td>
+                      <td className="num text-slate-500">{formatBuildings(totalFor(row))}</td>
                     </tr>
                   )
                 })}
@@ -365,13 +343,13 @@ export default function App() {
             </table>
           </div>
           {filteredRows.length === 0 && (
-            <div className="px-5 py-12 text-center text-sm text-slate-500">Ingen kommuner har energimærker i den valgte periode.</div>
+            <div className="px-5 py-12 text-center text-sm text-slate-500">Ingen kommuner har bygninger, hvor energimærket udløber i den valgte periode.</div>
           )}
         </Card>
       </main>
 
       <footer className="mx-auto flex max-w-[1500px] flex-wrap justify-between gap-2 px-6 pb-8 pt-2 text-xs text-slate-400">
-        <span>Kilde: kommunalt bygningsudtræk · {numberFormat.format(dashboard.quality.uniqueEnergyLabels)} unikke energimærker</span>
+        <span>Kilde: kommunalt bygningsudtræk og EMOData</span>
         <span>Opgjort pr. {sourceDate}</span>
       </footer>
     </div>

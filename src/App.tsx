@@ -29,7 +29,7 @@ type Year = typeof YEARS[number]
 type Horizon = Year
 type Bucket = 'expired' | Year
 type Metric = Record<Bucket, number>
-type SortKey = 'name' | 'selected' | 'total'
+type SortKey = 'name' | 'selected' | 'share' | 'total'
 
 type Municipality = {
   name: string
@@ -68,6 +68,7 @@ const dashboard = dashboardJson as DashboardData
 const municipalities = dashboard.municipalities
 const numberFormat = new Intl.NumberFormat('da-DK', { maximumFractionDigits: 0 })
 const compactFormat = new Intl.NumberFormat('da-DK', { notation: 'compact', maximumFractionDigits: 1 })
+const percentageFormat = new Intl.NumberFormat('da-DK', { style: 'percent', maximumFractionDigits: 1 })
 const dateFormat = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'long', year: 'numeric' })
 
 const horizonLabels: Record<Horizon, string> = {
@@ -109,6 +110,16 @@ function totalFor(row: Municipality) {
     (sum, bucket) => sum + row.metrics.buildings[bucket],
     0,
   )
+}
+
+function inventoryTotalFor(row: Municipality) {
+  return Object.values(row.metrics.buildings).reduce((sum, value) => sum + value, 0)
+    + row.unlabelled.buildings
+}
+
+function shareFor(row: Municipality, horizon: Horizon) {
+  const inventoryTotal = inventoryTotalFor(row)
+  return inventoryTotal === 0 ? 0 : valueFor(row, horizon) / inventoryTotal
 }
 
 function formatBuildings(value: number) {
@@ -158,6 +169,7 @@ export default function App() {
         let result = 0
         if (sortKey === 'name') result = a.name.localeCompare(b.name, 'da')
         if (sortKey === 'selected') result = valueFor(a, horizon) - valueFor(b, horizon)
+        if (sortKey === 'share') result = shareFor(a, horizon) - shareFor(b, horizon)
         if (sortKey === 'total') result = totalFor(a) - totalFor(b)
         return sortDescending ? -result : result
       })
@@ -300,7 +312,7 @@ export default function App() {
             <div className="mr-auto">
               <h2 className="text-[15px] font-semibold text-slate-900">Kommuner med udløb i den valgte periode</h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                {affectedMunicipalities} kommuner · {formatBuildings(totals[horizon])} · {horizonLabels[horizon]}
+                {affectedMunicipalities} kommuner · {formatBuildings(totals[horizon])} · Andel beregnet af alle kommunens bygninger
               </p>
             </div>
             <div className="relative w-full lg:w-72">
@@ -323,6 +335,7 @@ export default function App() {
                 <tr>
                   <SortableHeader label="Kommune" active={sortKey === 'name'} descending={sortDescending} onClick={() => setSort('name')} />
                   <SortableHeader label={`Bygninger · ${horizon}`} active={sortKey === 'selected'} descending={sortDescending} onClick={() => setSort('selected')} align="right" />
+                  <SortableHeader label={`Andel · ${horizon}`} active={sortKey === 'share'} descending={sortDescending} onClick={() => setSort('share')} align="right" />
                   <SortableHeader label="Alle perioder" active={sortKey === 'total'} descending={sortDescending} onClick={() => setSort('total')} align="right" />
                 </tr>
               </thead>
@@ -335,6 +348,7 @@ export default function App() {
                         <div className="text-[11px] text-slate-400">CVR {row.cvr} · kommunekode {row.municipalityCode}</div>
                       </td>
                       <td className="num font-semibold text-slate-950">{formatBuildings(valueFor(row, horizon))}</td>
+                      <td className="num font-semibold text-blue-700">{percentageFormat.format(shareFor(row, horizon))}</td>
                       <td className="num text-slate-500">{formatBuildings(totalFor(row))}</td>
                     </tr>
                   )

@@ -13,6 +13,7 @@ import {
   Building2,
   CalendarClock,
   CheckCircle2,
+  CircleAlert,
   Download,
   MapPin,
   Search,
@@ -29,7 +30,8 @@ type Year = typeof YEARS[number]
 type Horizon = Year
 type Bucket = 'expired' | Year
 type Metric = Record<Bucket, number>
-type SortKey = 'name' | 'selected' | 'share' | 'total'
+type SortKey = 'name' | 'selected' | 'share' | 'total' | 'missing'
+type TableMode = 'year' | 'missing'
 
 type Municipality = {
   name: string
@@ -41,6 +43,7 @@ type Municipality = {
     area: Metric
   }
   unlabelled: { buildings: number; area: number }
+  missingLabel: { buildings: number; area: number }
 }
 
 type DashboardData = {
@@ -54,11 +57,17 @@ type DashboardData = {
     buildings: Metric
     area: Metric
   }
+  totalsMissingLabel: { buildings: number; area: number }
   municipalities: Municipality[]
   quality: {
     municipalityCount: number
     uniqueEnergyLabels: number
     inventoryBuildings: number
+    municipalInventoryBuildings: number
+    exemptUseCodeBuildings: number
+    outsidePublicAreaThresholdBuildings: number
+    noHeatingInstallationBuildings: number
+    protectedBuildings: number
     unmatchedEnergyLabels?: number
     unmatchedGeographicEnergyLabels?: number
   }
@@ -117,6 +126,10 @@ function shareFor(row: Municipality, horizon: Horizon) {
   return allPeriods === 0 ? 0 : valueFor(row, horizon) / allPeriods
 }
 
+function missingFor(row: Municipality) {
+  return row.missingLabel.buildings
+}
+
 function formatBuildings(value: number) {
   return `${numberFormat.format(value)} bygninger`
 }
@@ -144,13 +157,21 @@ export default function App() {
   const [sortKey, setSortKey] = useState<SortKey>('selected')
   const [sortDescending, setSortDescending] = useState(true)
   const [selectedCvr, setSelectedCvr] = useState<string | null>(null)
+  const [tableMode, setTableMode] = useState<TableMode>('year')
   const totals = dashboard.totals.buildings
   const selectedMunicipality = municipalities.find((row) => row.cvr === selectedCvr)
   const chartMetrics = selectedMunicipality?.metrics.buildings ?? totals
 
   const selectHorizon = (value: Horizon) => {
     setHorizon(value)
+    setTableMode('year')
     setSortKey('selected')
+    setSortDescending(true)
+  }
+
+  const selectMissingLabels = () => {
+    setTableMode('missing')
+    setSortKey('missing')
     setSortDescending(true)
   }
 
@@ -161,7 +182,10 @@ export default function App() {
         const matchesQuery = !normalizedQuery
           || row.name.toLocaleLowerCase('da-DK').includes(normalizedQuery)
           || row.cvr.includes(normalizedQuery)
-        return matchesQuery && valueFor(row, horizon) > 0
+        const hasRelevantBuildings = tableMode === 'missing'
+          ? missingFor(row) > 0
+          : valueFor(row, horizon) > 0
+        return matchesQuery && hasRelevantBuildings
       })
       .sort((a, b) => {
         let result = 0
@@ -169,9 +193,10 @@ export default function App() {
         if (sortKey === 'selected') result = valueFor(a, horizon) - valueFor(b, horizon)
         if (sortKey === 'share') result = shareFor(a, horizon) - shareFor(b, horizon)
         if (sortKey === 'total') result = totalFor(a) - totalFor(b)
+        if (sortKey === 'missing') result = missingFor(a) - missingFor(b)
         return sortDescending ? -result : result
       })
-  }, [horizon, query, sortDescending, sortKey])
+  }, [horizon, query, sortDescending, sortKey, tableMode])
 
   const timelineData = YEARS.map((bucket) => ({
     name: bucket,
@@ -182,6 +207,9 @@ export default function App() {
 
   const affectedMunicipalities = municipalities.filter(
     (row) => valueFor(row, horizon) > 0,
+  ).length
+  const municipalitiesMissingLabels = municipalities.filter(
+    (row) => missingFor(row) > 0,
   ).length
   const nextPeak = YEARS.reduce((best, year) => (
     dashboard.totals.buildings[year] > dashboard.totals.buildings[best] ? year : best
@@ -236,14 +264,14 @@ export default function App() {
           </div>
         </section>
 
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløber i 2026"
             value={formatBuildings(dashboard.totals.buildings['2026'])}
             note={`${municipalities.filter((row) => row.metrics.buildings['2026'] > 0).length} kommuner`}
             tone="orange"
-            active={horizon === '2026'}
+            active={tableMode === 'year' && horizon === '2026'}
             onClick={() => selectHorizon('2026')}
           />
           <DeadlineCard
@@ -252,7 +280,7 @@ export default function App() {
             value={formatBuildings(dashboard.totals.buildings['2027'])}
             note={`${municipalities.filter((row) => row.metrics.buildings['2027'] > 0).length} kommuner`}
             tone="yellow"
-            active={horizon === '2027'}
+            active={tableMode === 'year' && horizon === '2027'}
             onClick={() => selectHorizon('2027')}
           />
           <DeadlineCard
@@ -261,10 +289,29 @@ export default function App() {
             value={`${nextPeak} · ${numberFormat.format(dashboard.totals.buildings[nextPeak])}`}
             note="bygninger, hvor energimærket udløber"
             tone="green"
-            active={horizon === nextPeak}
+            active={tableMode === 'year' && horizon === nextPeak}
             onClick={() => selectHorizon(nextPeak)}
           />
+          <DeadlineCard
+            icon={<CircleAlert size={18} />}
+            label="Mangler gyldigt mærke"
+            value={formatBuildings(dashboard.totalsMissingLabel.buildings)}
+            note={`${municipalitiesMissingLabels} kommuner · udløbet eller ikke fundet`}
+            tone="red"
+            active={tableMode === 'missing'}
+            onClick={selectMissingLabels}
+          />
         </section>
+
+        <Card className="border-blue-200 bg-blue-50/60 px-5 py-4 text-xs leading-5 text-slate-600">
+          <span className="font-semibold text-slate-800">Automatisk afgrænsning:</span>{' '}
+          {numberFormat.format(dashboard.quality.inventoryBuildings)} kommunale bygninger over 250 m² er medtaget.
+          Anvendelseskoder, fredede bygninger og bygninger registreret uden varmeinstallation er frasorteret efter{' '}
+          <a className="font-medium text-blue-700 underline" href="https://www.hbemo.dk/vejledning/faq/bekendtgoerelse-om-energimaerkning-af-bygninger" target="_blank" rel="noreferrer">HBEMO</a>
+          {' '}og den gældende{' '}
+          <a className="font-medium text-blue-700 underline" href="https://www.retsinformation.dk/eli/lta/2023/549" target="_blank" rel="noreferrer">bekendtgørelse</a>.
+          Forhold som nedrivningshensigt, opvarmet delareal og mangler i klimaskærmen kræver manuel kontrol.
+        </Card>
 
         <Card className="p-5">
           <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
@@ -323,9 +370,15 @@ export default function App() {
         <Card className="overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center">
             <div className="mr-auto">
-              <h2 className="text-[15px] font-semibold text-slate-900">Kommuner med udløb i den valgte periode</h2>
+              <h2 className="text-[15px] font-semibold text-slate-900">
+                {tableMode === 'missing'
+                  ? 'Kommuner med bygninger, der mangler et gyldigt energimærke'
+                  : 'Kommuner med udløb i den valgte periode'}
+              </h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                {affectedMunicipalities} kommuner · {formatBuildings(totals[horizon])} · Andel beregnet af bygninger i alle perioder
+                {tableMode === 'missing'
+                  ? `${municipalitiesMissingLabels} kommuner · ${formatBuildings(dashboard.totalsMissingLabel.buildings)} · udløbet eller ikke fundet`
+                  : `${affectedMunicipalities} kommuner · ${formatBuildings(totals[horizon])} · Andel beregnet af bygninger i alle perioder`}
               </p>
             </div>
             <div className="relative w-full lg:w-72">
@@ -350,6 +403,7 @@ export default function App() {
                   <SortableHeader label={`Bygninger · ${horizon}`} active={sortKey === 'selected'} descending={sortDescending} onClick={() => setSort('selected')} align="right" />
                   <SortableHeader label={`Andel · ${horizon}`} active={sortKey === 'share'} descending={sortDescending} onClick={() => setSort('share')} align="right" />
                   <SortableHeader label="Alle perioder" active={sortKey === 'total'} descending={sortDescending} onClick={() => setSort('total')} align="right" />
+                  <SortableHeader label="Mangler gyldigt mærke" active={sortKey === 'missing'} descending={sortDescending} onClick={() => setSort('missing')} align="right" />
                 </tr>
               </thead>
               <tbody>
@@ -373,6 +427,7 @@ export default function App() {
                       <td className="num font-semibold text-slate-950">{formatBuildings(valueFor(row, horizon))}</td>
                       <td className="num font-semibold text-blue-700">{percentageFormat.format(shareFor(row, horizon))}</td>
                       <td className="num text-slate-500">{formatBuildings(totalFor(row))}</td>
+                      <td className="num font-semibold text-red-700">{formatBuildings(missingFor(row))}</td>
                     </tr>
                   )
                 })}
@@ -380,7 +435,11 @@ export default function App() {
             </table>
           </div>
           {filteredRows.length === 0 && (
-            <div className="px-5 py-12 text-center text-sm text-slate-500">Ingen kommuner har bygninger, hvor energimærket udløber i den valgte periode.</div>
+            <div className="px-5 py-12 text-center text-sm text-slate-500">
+              {tableMode === 'missing'
+                ? 'Ingen kommuner har bygninger, der mangler et gyldigt energimærke.'
+                : 'Ingen kommuner har bygninger, hvor energimærket udløber i den valgte periode.'}
+            </div>
           )}
         </Card>
       </main>
@@ -406,7 +465,7 @@ function DeadlineCard({
   label: string
   value: string
   note: string
-  tone: 'orange' | 'yellow' | 'green'
+  tone: 'orange' | 'yellow' | 'green' | 'red'
   active: boolean
   onClick: () => void
 }) {
@@ -414,6 +473,7 @@ function DeadlineCard({
     orange: 'bg-orange-50 text-orange-700',
     yellow: 'bg-yellow-50 text-yellow-700',
     green: 'bg-green-50 text-green-700',
+    red: 'bg-red-50 text-red-700',
   }
   return (
     <button onClick={onClick} className="text-left">

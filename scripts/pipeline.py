@@ -11,7 +11,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -26,6 +26,28 @@ EMODATA_URL = (
 )
 YEARS = tuple(str(year) for year in range(2026, 2038))
 BUCKETS = ("expired", *YEARS)
+PUBLIC_PERIODIC_AREA_THRESHOLD = 250
+EXEMPT_USE_CODES = frozenset(
+    {
+        *(str(code) for code in range(211, 220)),
+        "221",
+        "222",
+        "223",
+        "229",
+        "231",
+        "232",
+        "233",
+        "234",
+        "239",
+        "414",
+        "510",
+        "540",
+        "585",
+        "910",
+        "920",
+        "930",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -158,6 +180,23 @@ def _bucket(valid_to: date, as_of: date) -> str | None:
     return year if year in YEARS else None
 
 
+def _eligibility_exclusion_reason(
+    use_code: str,
+    area: int,
+    protected: bool,
+    heating: str,
+) -> str | None:
+    if use_code in EXEMPT_USE_CODES:
+        return "exemptUseCodeBuildings"
+    if protected:
+        return "protectedBuildings"
+    if area <= PUBLIC_PERIODIC_AREA_THRESHOLD:
+        return "outsidePublicAreaThresholdBuildings"
+    if heating.strip().casefold() == "ingen varmeinstallation":
+        return "noHeatingInstallationBuildings"
+    return None
+
+
 def load_municipalities(path: Path) -> dict[str, str]:
     rows = json.loads(path.read_text(encoding="utf-8"))
     result = {str(row["cvr"]): str(row["name"]) for row in rows}
@@ -179,7 +218,10 @@ def import_workbook(
     )
     buildings: dict[tuple[str, str, str], Building] = {}
     labels: dict[str, dict[str, Any]] = {}
+    source_building_keys: set[tuple[str, str, str]] = set()
+    exclusion_counts: Counter[str] = Counter()
     rows_seen = 0
+    municipal_rows = 0
     included_rows = 0
     duplicate_buildings = 0
     labels_with_multiple_owners: set[str] = set()
@@ -190,7 +232,7 @@ def import_workbook(
         if cvr not in municipalities:
             continue
 
-        included_rows += 1
+        municipal_rows += 1
         municipality_code = row.get(_find_column(row, "Kommunenr"), "").strip()
         sfe = row.get(_find_column(row, "SFE-nummer"), "").strip()
         building_number = row.get(_find_column(row, "Bygningsnummer"), "").strip()
@@ -198,14 +240,33 @@ def import_workbook(
         area = _integer(row.get(_find_column(row, "Boligareal"))) + _integer(
             row.get(_find_column(row, "Erhvervsareal"))
         )
-        building = Building(cvr, municipality_code, bfe_values, building_number, area)
         building_key = (cvr, sfe or "|".join(bfe_values), building_number)
+        first_source_occurrence = building_key not in source_building_keys
+        source_building_keys.add(building_key)
+        municipality_code_counts[cvr][municipality_code] += 1
+
+        use_code = row.get(_find_column(row, "Anvendelskode"), "").strip()
+        protected_value = row.get(_find_column(row, "Fredet bygning"), "").strip()
+        protected = protected_value.casefold() not in {"", "nej"}
+        heating = row.get(_find_column(row, "Varmeforsyning"), "").strip()
+        exclusion_reason = _eligibility_exclusion_reason(
+            use_code,
+            area,
+            protected,
+            heating,
+        )
+        if exclusion_reason:
+            if first_source_occurrence:
+                exclusion_counts[exclusion_reason] += 1
+            continue
+
+        included_rows += 1
+        building = Building(cvr, municipality_code, bfe_values, building_number, area)
         if building_key in buildings:
             duplicate_buildings += 1
         else:
             buildings[building_key] = building
 
-        municipality_code_counts[cvr][municipality_code] += 1
         energy_label = row.get(_find_column(row, "EM-nr"), "").strip()
         valid_to_raw = row.get(_find_column(row, "Gyldig til"), "").strip()
         if not energy_label or not valid_to_raw:
@@ -232,9 +293,18 @@ def import_workbook(
     }
 
     inventory = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "generatedAt": datetime.now(UTC).isoformat(),
         "source": workbook.name,
+        "quality": {
+            "sourceRows": rows_seen,
+            "municipalityOwnedRows": municipal_rows,
+            "municipalInventoryBuildings": len(source_building_keys),
+            "includedRows": included_rows,
+            "inventoryBuildings": len(buildings),
+            "duplicateBuildingRows": duplicate_buildings,
+            **exclusion_counts,
+        },
         "municipalities": [
             {
                 "name": municipalities[cvr],
@@ -270,9 +340,12 @@ def import_workbook(
         source_name=re.sub(r"^[0-9a-fA-F-]{36}-", "", workbook.name),
         quality={
             "sourceRows": rows_seen,
+            "municipalityOwnedRows": municipal_rows,
+            "municipalInventoryBuildings": len(source_building_keys),
             "includedRows": included_rows,
             "inventoryBuildings": len(buildings),
             "duplicateBuildingRows": duplicate_buildings,
+            **exclusion_counts,
             "labelsWithMultipleMunicipalOwners": len(labels_with_multiple_owners),
             "unmatchedEnergyLabels": 0,
         },
@@ -297,6 +370,7 @@ def aggregate_labels(
             "municipalityCode": municipality_codes[cvr],
             "metrics": _empty_metrics(),
             "unlabelled": {"buildings": 0, "area": 0},
+            "missingLabel": {"buildings": 0, "area": 0},
         }
         for cvr, name in municipalities.items()
     }
@@ -304,16 +378,16 @@ def aggregate_labels(
 
     for entry in labels.values():
         bucket = _bucket(entry["validTo"], as_of)
-        if bucket is None:
-            continue
         for cvr, owner_buildings in entry["owners"].items():
+            labelled_building_keys.update(owner_buildings)
+            if bucket is None:
+                continue
             municipality = rows[cvr]
             municipality["metrics"]["labels"][bucket] += 1
             municipality["metrics"]["buildings"][bucket] += len(owner_buildings)
             municipality["metrics"]["area"][bucket] += sum(
                 building.area for building in owner_buildings.values()
             )
-            labelled_building_keys.update(owner_buildings)
 
     for key, building in buildings.items():
         if key not in labelled_building_keys:
@@ -321,7 +395,18 @@ def aggregate_labels(
             rows[building.cvr]["unlabelled"]["area"] += building.area
 
     totals = _empty_metrics()
+    totals_missing_label = {"buildings": 0, "area": 0}
     for municipality in rows.values():
+        municipality["missingLabel"]["buildings"] = (
+            municipality["unlabelled"]["buildings"]
+            + municipality["metrics"]["buildings"]["expired"]
+        )
+        municipality["missingLabel"]["area"] = (
+            municipality["unlabelled"]["area"]
+            + municipality["metrics"]["area"]["expired"]
+        )
+        for metric in totals_missing_label:
+            totals_missing_label[metric] += municipality["missingLabel"][metric]
         for metric in totals:
             for bucket in BUCKETS:
                 totals[metric][bucket] += municipality["metrics"][metric][bucket]
@@ -336,6 +421,7 @@ def aggregate_labels(
         "source": source_name,
         "years": list(YEARS),
         "totals": totals,
+        "totalsMissingLabel": totals_missing_label,
         "municipalities": sorted(rows.values(), key=lambda row: row["name"]),
         "quality": {
             **quality,
@@ -497,10 +583,9 @@ def update_from_emodata(
         as_of=as_of,
         source_name="EMOData",
         quality={
-            "sourceRows": 0,
+            **inventory.get("quality", {}),
             "includedRows": len(buildings),
             "inventoryBuildings": len(buildings),
-            "duplicateBuildingRows": 0,
             "labelsWithMultipleMunicipalOwners": sum(
                 len(entry["owners"]) > 1 for entry in labels.values()
             ),

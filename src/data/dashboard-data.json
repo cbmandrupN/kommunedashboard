@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedAt": "2026-09-04T12:19:16.867978+00:00",
   "asOf": "2026-09-04",
   "source": "EMOData",
@@ -127,7 +127,9 @@
       "missingLabel": {
         "buildings": 20,
         "area": 22985
-      }
+      },
+      "eligibleBuildings": 222,
+      "validLabelBuildings": 202
     },
     {
       "name": "Aalborg Kommune",
@@ -187,7 +189,9 @@
       "missingLabel": {
         "buildings": 324,
         "area": 402334
-      }
+      },
+      "eligibleBuildings": 723,
+      "validLabelBuildings": 399
     },
     {
       "name": "Aarhus Kommune",
@@ -247,7 +251,9 @@
       "missingLabel": {
         "buildings": 491,
         "area": 868906
-      }
+      },
+      "eligibleBuildings": 1255,
+      "validLabelBuildings": 764
     },
     {
       "name": "Albertslund Kommune",
@@ -307,7 +313,9 @@
       "missingLabel": {
         "buildings": 54,
         "area": 102110
-      }
+      },
+      "eligibleBuildings": 91,
+      "validLabelBuildings": 37
     },
     {
       "name": "Allerød Kommune",
@@ -367,7 +375,9 @@
       "missingLabel": {
         "buildings": 20,
         "area": 25277
-      }
+      },
+      "eligibleBuildings": 85,
+      "validLabelBuildings": 65
     },
     {
       "name": "Assens Kommune",
@@ -427,7 +437,9 @@
       "missingLabel": {
         "buildings": 44,
         "area": 62742
-      }
+      },
+      "eligibleBuildings": 102,
+      "validLabelBuildings": 58
     },
     {
       "name": "Ballerup Kommune",
@@ -487,7 +499,9 @@
       "missingLabel": {
         "buildings": 11,
         "area": 46383
-      }
+      },
+      "eligibleBuildings": 164,
+      "validLabelBuildings": 153
     },
     {
       "name": "Billund Kommune",
@@ -547,7 +561,9 @@
       "missingLabel": {
         "buildings": 19,
         "area": 31899
-      }
+      },
+      "eligibleBuildings": 81,
+      "validLabelBuildings": 62
     },
     {
       "name": "Bornholms Regionskommune",
@@ -607,7 +623,9 @@
       "missingLabel": {
         "buildings": 200,
         "area": 199137
-      }
+      },
+      "eligibleBuildings": 219,
+      "validLabelBuildings": 19
     },
     {
       "name": "Brøndby Kommune",
@@ -667,7 +685,9 @@
       "missingLabel": {
         "buildings": 13,
         "area": 32730
-      }
+      },
+      "eligibleBuildings": 104,
+      "validLabelBuildings": 91
     },
     {
       "name": "Brønderslev Kommune",
@@ -727,7 +747,9 @@
       "missingLabel": {
         "buildings": 27,
         "area": 21042
-      }
+      },
+      "eligibleBuildings": 119,
+      "validLabelBuildings": 92
     },
     {
       "name": "Dragør Kommune",
@@ -787,7 +809,9 @@
       "missingLabel": {
         "buildings": 13,
         "area": 16767
-      }
+      },
+      "eligibleBuildings": 53,
+      "validLabelBuildings": 40
     },
     {
       "name": "Egedal Kommune",
@@ -847,7 +871,9 @@
       "missingLabel": {
         "buildings": 22,
         "area": 25328
-      }
+      },
+      "eligibleBuildings": 136,
+      "validLabelBuildings": 114
     },
     {
       "name": "Esbjerg Kommune",
@@ -907,7 +933,9 @@
       "missingLabel": {
         "buildings": 194,
         "area": 256624
-      }
+      },
+      "eligibleBuildings": 452,
+      "validLabelBuildings": 258
     },
     {
       "name": "Faaborg-Midtfyn Kommune",
@@ -967,7 +995,9 @@
       "missingLabel": {
         "buildings": 34,
         "area": 33458
-      }
+      },
+      "eligibleBuildings": 163,
+      "validLabelBuildings": 129
     },
     {
       "name": "Fanø Kommune",
@@ -1027,7 +1057,9 @@
       "missingLabel": {
         "buildings": 15,
         "area": 18553
-      }
+      },
+      "eligibleBuildings": 15,
+      "validLabelBuildings": 0
     },
     {
       "name": "Favrskov Kommune",
@@ -1087,7 +1119,9 @@
       "missingLabel": {
         "buildings": 56,
         "area": 58851
-      }
+      },
+      "eligibleBuildings": 155,
+      "validLabelBuildings": 99
     },
     {
       "name": "Faxe Kommune",
@@ -1147,7 +1181,9 @@
       "missingLabel": {
         "buildings": 22,
         "area": 20487
-      }
+      },
+      "eligibleBuildings": 133,
+      "validLabelBuildings": 111
     },
     {
       "name": "Fredensborg Kommune",
@@ -1207,7 +1243,9 @@
       "missingLabel": {
         "buildings": 9,
         "area": 27741
-      }
+      },
+      "eligibleBuildings": 120,
+      "validLabelBuildings": 111
     },
     {
       "name": "Fredericia Kommune",
@@ -1267,7 +1305,9 @@
       "missingLabel": {
         "buildings": 104,
         "area": 158541
-      }
+      },
+      "eligibleBuildings": 156,
+      "validLabelBuildings": 52
     },
     {
       "name": "Frederiksberg Kommune",
@@ -1327,7 +1367,9 @@
       "missingLabel": {
         "buildings": 22,
         "area": 45753
-      }
+      },
+      "eligibleBuildings": 165,
+      "validLabelBuildings": 143
     },
     {
       "name": "Frederikshavn Kommune",
@@ -1387,7 +1429,9 @@
       "missingLabel": {
         "buildings": 66,
         "area": 78745
-      }
+      },
+      "eligibleBuildings": 184,
+      "validLabelBuildings": 118
     },
     {
       "name": "Frederikssund Kommune",
@@ -1447,7 +1491,9 @@
       "missingLabel": {
         "buildings": 29,
         "area": 27833
-      }
+      },
+      "eligibleBuildings": 182,
+      "validLabelBuildings": 153
     },
     {
       "name": "Furesø Kommune",
@@ -1507,7 +1553,9 @@
       "missingLabel": {
         "buildings": 27,
         "area": 28248
-      }
+      },
+      "eligibleBuildings": 144,
+      "validLabelBuildings": 117
     },
     {
       "name": "Gentofte Kommune",
@@ -1567,7 +1615,9 @@
       "missingLabel": {
         "buildings": 51,
         "area": 65471
-      }
+      },
+      "eligibleBuildings": 271,
+      "validLabelBuildings": 220
     },
     {
       "name": "Gladsaxe Kommune",
@@ -1627,7 +1677,9 @@
       "missingLabel": {
         "buildings": 61,
         "area": 119843
-      }
+      },
+      "eligibleBuildings": 238,
+      "validLabelBuildings": 177
     },
     {
       "name": "Glostrup Kommune",
@@ -1687,7 +1739,9 @@
       "missingLabel": {
         "buildings": 13,
         "area": 18448
-      }
+      },
+      "eligibleBuildings": 108,
+      "validLabelBuildings": 95
     },
     {
       "name": "Greve Kommune",
@@ -1747,7 +1801,9 @@
       "missingLabel": {
         "buildings": 44,
         "area": 57644
-      }
+      },
+      "eligibleBuildings": 128,
+      "validLabelBuildings": 84
     },
     {
       "name": "Gribskov Kommune",
@@ -1807,7 +1863,9 @@
       "missingLabel": {
         "buildings": 13,
         "area": 15500
-      }
+      },
+      "eligibleBuildings": 109,
+      "validLabelBuildings": 96
     },
     {
       "name": "Guldborgsund Kommune",
@@ -1867,7 +1925,9 @@
       "missingLabel": {
         "buildings": 86,
         "area": 108179
-      }
+      },
+      "eligibleBuildings": 249,
+      "validLabelBuildings": 163
     },
     {
       "name": "Haderslev Kommune",
@@ -1927,7 +1987,9 @@
       "missingLabel": {
         "buildings": 72,
         "area": 87886
-      }
+      },
+      "eligibleBuildings": 206,
+      "validLabelBuildings": 134
     },
     {
       "name": "Halsnæs Kommune",
@@ -1987,7 +2049,9 @@
       "missingLabel": {
         "buildings": 39,
         "area": 29394
-      }
+      },
+      "eligibleBuildings": 105,
+      "validLabelBuildings": 66
     },
     {
       "name": "Hedensted Kommune",
@@ -2047,7 +2111,9 @@
       "missingLabel": {
         "buildings": 40,
         "area": 38803
-      }
+      },
+      "eligibleBuildings": 164,
+      "validLabelBuildings": 124
     },
     {
       "name": "Helsingør Kommune",
@@ -2107,7 +2173,9 @@
       "missingLabel": {
         "buildings": 55,
         "area": 76156
-      }
+      },
+      "eligibleBuildings": 221,
+      "validLabelBuildings": 166
     },
     {
       "name": "Herlev Kommune",
@@ -2167,7 +2235,9 @@
       "missingLabel": {
         "buildings": 13,
         "area": 15269
-      }
+      },
+      "eligibleBuildings": 77,
+      "validLabelBuildings": 64
     },
     {
       "name": "Herning Kommune",
@@ -2227,7 +2297,9 @@
       "missingLabel": {
         "buildings": 52,
         "area": 143997
-      }
+      },
+      "eligibleBuildings": 267,
+      "validLabelBuildings": 215
     },
     {
       "name": "Hillerød Kommune",
@@ -2287,7 +2359,9 @@
       "missingLabel": {
         "buildings": 20,
         "area": 31593
-      }
+      },
+      "eligibleBuildings": 196,
+      "validLabelBuildings": 176
     },
     {
       "name": "Hjørring Kommune",
@@ -2347,7 +2421,9 @@
       "missingLabel": {
         "buildings": 56,
         "area": 69228
-      }
+      },
+      "eligibleBuildings": 196,
+      "validLabelBuildings": 140
     },
     {
       "name": "Holbæk Kommune",
@@ -2407,7 +2483,9 @@
       "missingLabel": {
         "buildings": 36,
         "area": 35843
-      }
+      },
+      "eligibleBuildings": 236,
+      "validLabelBuildings": 200
     },
     {
       "name": "Holstebro Kommune",
@@ -2467,7 +2545,9 @@
       "missingLabel": {
         "buildings": 219,
         "area": 355549
-      }
+      },
+      "eligibleBuildings": 250,
+      "validLabelBuildings": 31
     },
     {
       "name": "Horsens Kommune",
@@ -2527,7 +2607,9 @@
       "missingLabel": {
         "buildings": 110,
         "area": 192747
-      }
+      },
+      "eligibleBuildings": 263,
+      "validLabelBuildings": 153
     },
     {
       "name": "Hvidovre Kommune",
@@ -2587,7 +2669,9 @@
       "missingLabel": {
         "buildings": 24,
         "area": 36121
-      }
+      },
+      "eligibleBuildings": 173,
+      "validLabelBuildings": 149
     },
     {
       "name": "Høje-Taastrup Kommune",
@@ -2647,7 +2731,9 @@
       "missingLabel": {
         "buildings": 151,
         "area": 177115
-      }
+      },
+      "eligibleBuildings": 178,
+      "validLabelBuildings": 27
     },
     {
       "name": "Hørsholm Kommune",
@@ -2707,7 +2793,9 @@
       "missingLabel": {
         "buildings": 18,
         "area": 23806
-      }
+      },
+      "eligibleBuildings": 69,
+      "validLabelBuildings": 51
     },
     {
       "name": "Ikast-Brande Kommune",
@@ -2767,7 +2855,9 @@
       "missingLabel": {
         "buildings": 44,
         "area": 56467
-      }
+      },
+      "eligibleBuildings": 145,
+      "validLabelBuildings": 101
     },
     {
       "name": "Ishøj Kommune",
@@ -2827,7 +2917,9 @@
       "missingLabel": {
         "buildings": 12,
         "area": 11916
-      }
+      },
+      "eligibleBuildings": 104,
+      "validLabelBuildings": 92
     },
     {
       "name": "Jammerbugt Kommune",
@@ -2887,7 +2979,9 @@
       "missingLabel": {
         "buildings": 106,
         "area": 165601
-      }
+      },
+      "eligibleBuildings": 135,
+      "validLabelBuildings": 29
     },
     {
       "name": "Kalundborg Kommune",
@@ -2947,7 +3041,9 @@
       "missingLabel": {
         "buildings": 36,
         "area": 26978
-      }
+      },
+      "eligibleBuildings": 166,
+      "validLabelBuildings": 130
     },
     {
       "name": "Kerteminde Kommune",
@@ -3007,7 +3103,9 @@
       "missingLabel": {
         "buildings": 17,
         "area": 17025
-      }
+      },
+      "eligibleBuildings": 96,
+      "validLabelBuildings": 79
     },
     {
       "name": "Kolding Kommune",
@@ -3067,7 +3165,9 @@
       "missingLabel": {
         "buildings": 82,
         "area": 99692
-      }
+      },
+      "eligibleBuildings": 347,
+      "validLabelBuildings": 265
     },
     {
       "name": "Københavns Kommune",
@@ -3127,7 +3227,9 @@
       "missingLabel": {
         "buildings": 223,
         "area": 348780
-      }
+      },
+      "eligibleBuildings": 1073,
+      "validLabelBuildings": 850
     },
     {
       "name": "Køge Kommune",
@@ -3187,7 +3289,9 @@
       "missingLabel": {
         "buildings": 66,
         "area": 85638
-      }
+      },
+      "eligibleBuildings": 212,
+      "validLabelBuildings": 146
     },
     {
       "name": "Langeland Kommune",
@@ -3247,7 +3351,9 @@
       "missingLabel": {
         "buildings": 12,
         "area": 14690
-      }
+      },
+      "eligibleBuildings": 49,
+      "validLabelBuildings": 37
     },
     {
       "name": "Lejre Kommune",
@@ -3307,7 +3413,9 @@
       "missingLabel": {
         "buildings": 20,
         "area": 21231
-      }
+      },
+      "eligibleBuildings": 144,
+      "validLabelBuildings": 124
     },
     {
       "name": "Lemvig Kommune",
@@ -3367,7 +3475,9 @@
       "missingLabel": {
         "buildings": 115,
         "area": 124296
-      }
+      },
+      "eligibleBuildings": 118,
+      "validLabelBuildings": 3
     },
     {
       "name": "Lolland Kommune",
@@ -3427,7 +3537,9 @@
       "missingLabel": {
         "buildings": 38,
         "area": 53541
-      }
+      },
+      "eligibleBuildings": 176,
+      "validLabelBuildings": 138
     },
     {
       "name": "Lyngby-Taarbæk Kommune",
@@ -3487,7 +3599,9 @@
       "missingLabel": {
         "buildings": 100,
         "area": 74334
-      }
+      },
+      "eligibleBuildings": 186,
+      "validLabelBuildings": 86
     },
     {
       "name": "Læsø Kommune",
@@ -3547,7 +3661,9 @@
       "missingLabel": {
         "buildings": 8,
         "area": 7445
-      }
+      },
+      "eligibleBuildings": 24,
+      "validLabelBuildings": 16
     },
     {
       "name": "Mariagerfjord Kommune",
@@ -3607,7 +3723,9 @@
       "missingLabel": {
         "buildings": 67,
         "area": 74182
-      }
+      },
+      "eligibleBuildings": 175,
+      "validLabelBuildings": 108
     },
     {
       "name": "Middelfart Kommune",
@@ -3667,7 +3785,9 @@
       "missingLabel": {
         "buildings": 20,
         "area": 20336
-      }
+      },
+      "eligibleBuildings": 184,
+      "validLabelBuildings": 164
     },
     {
       "name": "Morsø Kommune",
@@ -3727,7 +3847,9 @@
       "missingLabel": {
         "buildings": 26,
         "area": 33476
-      }
+      },
+      "eligibleBuildings": 74,
+      "validLabelBuildings": 48
     },
     {
       "name": "Norddjurs Kommune",
@@ -3787,7 +3909,9 @@
       "missingLabel": {
         "buildings": 19,
         "area": 19261
-      }
+      },
+      "eligibleBuildings": 173,
+      "validLabelBuildings": 154
     },
     {
       "name": "Nordfyns Kommune",
@@ -3847,7 +3971,9 @@
       "missingLabel": {
         "buildings": 31,
         "area": 17026
-      }
+      },
+      "eligibleBuildings": 119,
+      "validLabelBuildings": 88
     },
     {
       "name": "Nyborg Kommune",
@@ -3907,7 +4033,9 @@
       "missingLabel": {
         "buildings": 45,
         "area": 41581
-      }
+      },
+      "eligibleBuildings": 121,
+      "validLabelBuildings": 76
     },
     {
       "name": "Næstved Kommune",
@@ -3967,7 +4095,9 @@
       "missingLabel": {
         "buildings": 48,
         "area": 54791
-      }
+      },
+      "eligibleBuildings": 328,
+      "validLabelBuildings": 280
     },
     {
       "name": "Odder Kommune",
@@ -4027,7 +4157,9 @@
       "missingLabel": {
         "buildings": 15,
         "area": 14687
-      }
+      },
+      "eligibleBuildings": 81,
+      "validLabelBuildings": 66
     },
     {
       "name": "Odense Kommune",
@@ -4087,7 +4219,9 @@
       "missingLabel": {
         "buildings": 156,
         "area": 372667
-      }
+      },
+      "eligibleBuildings": 490,
+      "validLabelBuildings": 334
     },
     {
       "name": "Odsherred Kommune",
@@ -4147,7 +4281,9 @@
       "missingLabel": {
         "buildings": 78,
         "area": 104107
-      }
+      },
+      "eligibleBuildings": 113,
+      "validLabelBuildings": 35
     },
     {
       "name": "Randers Kommune",
@@ -4207,7 +4343,9 @@
       "missingLabel": {
         "buildings": 75,
         "area": 122806
-      }
+      },
+      "eligibleBuildings": 326,
+      "validLabelBuildings": 251
     },
     {
       "name": "Rebild Kommune",
@@ -4267,7 +4405,9 @@
       "missingLabel": {
         "buildings": 7,
         "area": 12657
-      }
+      },
+      "eligibleBuildings": 82,
+      "validLabelBuildings": 75
     },
     {
       "name": "Ringkøbing-Skjern Kommune",
@@ -4327,7 +4467,9 @@
       "missingLabel": {
         "buildings": 186,
         "area": 223366
-      }
+      },
+      "eligibleBuildings": 241,
+      "validLabelBuildings": 55
     },
     {
       "name": "Ringsted Kommune",
@@ -4387,7 +4529,9 @@
       "missingLabel": {
         "buildings": 13,
         "area": 19841
-      }
+      },
+      "eligibleBuildings": 127,
+      "validLabelBuildings": 114
     },
     {
       "name": "Roskilde Kommune",
@@ -4447,7 +4591,9 @@
       "missingLabel": {
         "buildings": 187,
         "area": 213830
-      }
+      },
+      "eligibleBuildings": 327,
+      "validLabelBuildings": 140
     },
     {
       "name": "Rudersdal Kommune",
@@ -4507,7 +4653,9 @@
       "missingLabel": {
         "buildings": 98,
         "area": 111078
-      }
+      },
+      "eligibleBuildings": 190,
+      "validLabelBuildings": 92
     },
     {
       "name": "Rødovre Kommune",
@@ -4567,7 +4715,9 @@
       "missingLabel": {
         "buildings": 17,
         "area": 37341
-      }
+      },
+      "eligibleBuildings": 104,
+      "validLabelBuildings": 87
     },
     {
       "name": "Samsø Kommune",
@@ -4627,7 +4777,9 @@
       "missingLabel": {
         "buildings": 8,
         "area": 3033
-      }
+      },
+      "eligibleBuildings": 29,
+      "validLabelBuildings": 21
     },
     {
       "name": "Silkeborg Kommune",
@@ -4687,7 +4839,9 @@
       "missingLabel": {
         "buildings": 55,
         "area": 65794
-      }
+      },
+      "eligibleBuildings": 377,
+      "validLabelBuildings": 322
     },
     {
       "name": "Skanderborg kommune",
@@ -4747,7 +4901,9 @@
       "missingLabel": {
         "buildings": 38,
         "area": 44761
-      }
+      },
+      "eligibleBuildings": 252,
+      "validLabelBuildings": 214
     },
     {
       "name": "Skive Kommune",
@@ -4807,7 +4963,9 @@
       "missingLabel": {
         "buildings": 110,
         "area": 132427
-      }
+      },
+      "eligibleBuildings": 218,
+      "validLabelBuildings": 108
     },
     {
       "name": "Slagelse Kommune",
@@ -4867,7 +5025,9 @@
       "missingLabel": {
         "buildings": 39,
         "area": 39185
-      }
+      },
+      "eligibleBuildings": 300,
+      "validLabelBuildings": 261
     },
     {
       "name": "Solrød Kommune",
@@ -4927,7 +5087,9 @@
       "missingLabel": {
         "buildings": 9,
         "area": 15865
-      }
+      },
+      "eligibleBuildings": 54,
+      "validLabelBuildings": 45
     },
     {
       "name": "Sorø Kommune",
@@ -4987,7 +5149,9 @@
       "missingLabel": {
         "buildings": 13,
         "area": 10490
-      }
+      },
+      "eligibleBuildings": 114,
+      "validLabelBuildings": 101
     },
     {
       "name": "Stevns Kommune",
@@ -5047,7 +5211,9 @@
       "missingLabel": {
         "buildings": 20,
         "area": 17506
-      }
+      },
+      "eligibleBuildings": 86,
+      "validLabelBuildings": 66
     },
     {
       "name": "Struer Kommune",
@@ -5107,7 +5273,9 @@
       "missingLabel": {
         "buildings": 28,
         "area": 38102
-      }
+      },
+      "eligibleBuildings": 89,
+      "validLabelBuildings": 61
     },
     {
       "name": "Svendborg Kommune",
@@ -5167,7 +5335,9 @@
       "missingLabel": {
         "buildings": 33,
         "area": 60678
-      }
+      },
+      "eligibleBuildings": 204,
+      "validLabelBuildings": 171
     },
     {
       "name": "Syddjurs Kommune",
@@ -5227,7 +5397,9 @@
       "missingLabel": {
         "buildings": 61,
         "area": 50072
-      }
+      },
+      "eligibleBuildings": 163,
+      "validLabelBuildings": 102
     },
     {
       "name": "Sønderborg Kommune",
@@ -5287,7 +5459,9 @@
       "missingLabel": {
         "buildings": 80,
         "area": 130694
-      }
+      },
+      "eligibleBuildings": 264,
+      "validLabelBuildings": 184
     },
     {
       "name": "Thisted Kommune",
@@ -5347,7 +5521,9 @@
       "missingLabel": {
         "buildings": 169,
         "area": 214107
-      }
+      },
+      "eligibleBuildings": 225,
+      "validLabelBuildings": 56
     },
     {
       "name": "Tårnby Kommune",
@@ -5407,7 +5583,9 @@
       "missingLabel": {
         "buildings": 24,
         "area": 26713
-      }
+      },
+      "eligibleBuildings": 157,
+      "validLabelBuildings": 133
     },
     {
       "name": "Tønder Kommune",
@@ -5467,7 +5645,9 @@
       "missingLabel": {
         "buildings": 136,
         "area": 152515
-      }
+      },
+      "eligibleBuildings": 173,
+      "validLabelBuildings": 37
     },
     {
       "name": "Vallensbæk Kommune",
@@ -5527,7 +5707,9 @@
       "missingLabel": {
         "buildings": 10,
         "area": 13977
-      }
+      },
+      "eligibleBuildings": 44,
+      "validLabelBuildings": 34
     },
     {
       "name": "Varde Kommune",
@@ -5587,7 +5769,9 @@
       "missingLabel": {
         "buildings": 17,
         "area": 15688
-      }
+      },
+      "eligibleBuildings": 165,
+      "validLabelBuildings": 148
     },
     {
       "name": "Vejen Kommune",
@@ -5647,7 +5831,9 @@
       "missingLabel": {
         "buildings": 55,
         "area": 59596
-      }
+      },
+      "eligibleBuildings": 195,
+      "validLabelBuildings": 140
     },
     {
       "name": "Vejle Kommune",
@@ -5707,7 +5893,9 @@
       "missingLabel": {
         "buildings": 62,
         "area": 73508
-      }
+      },
+      "eligibleBuildings": 489,
+      "validLabelBuildings": 427
     },
     {
       "name": "Vesthimmerlands Kommune",
@@ -5767,7 +5955,9 @@
       "missingLabel": {
         "buildings": 60,
         "area": 57042
-      }
+      },
+      "eligibleBuildings": 180,
+      "validLabelBuildings": 120
     },
     {
       "name": "Viborg Kommune",
@@ -5827,7 +6017,9 @@
       "missingLabel": {
         "buildings": 83,
         "area": 134820
-      }
+      },
+      "eligibleBuildings": 351,
+      "validLabelBuildings": 268
     },
     {
       "name": "Vordingborg Kommune",
@@ -5887,7 +6079,9 @@
       "missingLabel": {
         "buildings": 76,
         "area": 82142
-      }
+      },
+      "eligibleBuildings": 157,
+      "validLabelBuildings": 81
     },
     {
       "name": "Ærø Kommune",
@@ -5947,7 +6141,9 @@
       "missingLabel": {
         "buildings": 21,
         "area": 12593
-      }
+      },
+      "eligibleBuildings": 38,
+      "validLabelBuildings": 17
     }
   ],
   "quality": {

@@ -101,6 +101,8 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(metrics["labels"]["2027"], 1)
         self.assertEqual(metrics["buildings"]["2027"], 2)
         self.assertEqual(metrics["area"]["2027"], 300)
+        self.assertEqual(result["municipalities"][0]["eligibleBuildings"], 2)
+        self.assertEqual(result["municipalities"][0]["validLabelBuildings"], 2)
         self.assertEqual(result["totalsMissingLabel"]["buildings"], 0)
 
     def test_expired_and_unlabelled_buildings_are_missing_valid_labels(self) -> None:
@@ -125,6 +127,8 @@ class PipelineTests(unittest.TestCase):
         )
         municipality = result["municipalities"][0]
         self.assertEqual(municipality["missingLabel"]["buildings"], 2)
+        self.assertEqual(municipality["eligibleBuildings"], 2)
+        self.assertEqual(municipality["validLabelBuildings"], 0)
         self.assertEqual(result["totalsMissingLabel"]["buildings"], 2)
 
     def test_valid_label_beyond_chart_horizon_is_not_missing(self) -> None:
@@ -143,7 +147,10 @@ class PipelineTests(unittest.TestCase):
             source_name="fixture",
             quality={},
         )
+        municipality = result["municipalities"][0]
         self.assertEqual(result["totalsMissingLabel"]["buildings"], 0)
+        self.assertEqual(municipality["eligibleBuildings"], 1)
+        self.assertEqual(municipality["validLabelBuildings"], 1)
 
     def test_building_export_is_valid_xlsx(self) -> None:
         building = Building("1", "101", ("10",), "2", 300)

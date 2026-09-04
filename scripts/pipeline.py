@@ -520,6 +520,8 @@ def aggregate_labels(
             "metrics": _empty_metrics(),
             "unlabelled": {"buildings": 0, "area": 0},
             "missingLabel": {"buildings": 0, "area": 0},
+            "eligibleBuildings": 0,
+            "validLabelBuildings": 0,
         }
         for cvr, name in municipalities.items()
     }
@@ -539,6 +541,7 @@ def aggregate_labels(
             )
 
     for key, building in buildings.items():
+        rows[building.cvr]["eligibleBuildings"] += 1
         if key not in labelled_building_keys:
             rows[building.cvr]["unlabelled"]["buildings"] += 1
             rows[building.cvr]["unlabelled"]["area"] += building.area
@@ -554,6 +557,10 @@ def aggregate_labels(
             municipality["unlabelled"]["area"]
             + municipality["metrics"]["area"]["expired"]
         )
+        municipality["validLabelBuildings"] = (
+            municipality["eligibleBuildings"]
+            - municipality["missingLabel"]["buildings"]
+        )
         for metric in totals_missing_label:
             totals_missing_label[metric] += municipality["missingLabel"][metric]
         for metric in totals:
@@ -564,7 +571,7 @@ def aggregate_labels(
         any(row["metrics"]["labels"].values()) for row in rows.values()
     )
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "generatedAt": datetime.now(UTC).isoformat(),
         "asOf": as_of.isoformat(),
         "source": source_name,

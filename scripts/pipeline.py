@@ -211,10 +211,10 @@ def _write_xlsx(path: Path, rows: list[list[str | int]]) -> None:
     worksheet = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f'<dimension ref="A1:{last_column}{last_row}"/>'
         '<sheetViews><sheetView workbookViewId="0">'
         '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
         "</sheetView></sheetViews>"
-        f'<dimension ref="A1:{last_column}{last_row}"/>'
         "<sheetData>"
         + "".join(worksheet_rows)
         + "</sheetData>"

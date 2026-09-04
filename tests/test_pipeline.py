@@ -163,6 +163,10 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("Test Kommune", worksheet)
             self.assertIn("Mangler energimærke", worksheet)
             self.assertIn("BFE-nummer", worksheet)
+            self.assertLess(
+                worksheet.index("<dimension"),
+                worksheet.index("<sheetViews>"),
+            )
 
 
 if __name__ == "__main__":

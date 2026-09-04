@@ -143,7 +143,10 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('selected')
   const [sortDescending, setSortDescending] = useState(true)
+  const [selectedCvr, setSelectedCvr] = useState<string | null>(null)
   const totals = dashboard.totals.buildings
+  const selectedMunicipality = municipalities.find((row) => row.cvr === selectedCvr)
+  const chartMetrics = selectedMunicipality?.metrics.buildings ?? totals
 
   const selectHorizon = (value: Horizon) => {
     setHorizon(value)
@@ -173,7 +176,7 @@ export default function App() {
   const timelineData = YEARS.map((bucket) => ({
     name: bucket,
     bucket,
-    value: totals[bucket],
+    value: chartMetrics[bucket],
     color: bucket === horizon ? '#0f172a' : chartColors[bucket],
   }))
 
@@ -266,11 +269,26 @@ export default function App() {
         <Card className="p-5">
           <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-[15px] font-semibold text-slate-900">Bygninger, hvor energimærket udløber frem til 2037</h2>
-              <p className="mt-1 text-xs text-slate-500">Klik på en søjle for at filtrere kommunerne og sortere efter flest udløb.</p>
+              <h2 className="text-[15px] font-semibold text-slate-900">
+                {selectedMunicipality
+                  ? `${selectedMunicipality.name}: bygninger, hvor energimærket udløber`
+                  : 'Bygninger, hvor energimærket udløber frem til 2037'}
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                {selectedMunicipality
+                  ? 'Grafen viser kun den valgte kommune. Klik på en søjle for at vælge år.'
+                  : 'Klik på en kommune i tabellen for at vise dens bygninger i grafen.'}
+              </p>
             </div>
-            <div className="rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
-              Valgt: {horizonLabels[horizon]}
+            <div className="flex flex-wrap items-center gap-2">
+              {selectedMunicipality && (
+                <Button variant="secondary" size="sm" onClick={() => setSelectedCvr(null)}>
+                  Vis alle kommuner
+                </Button>
+              )}
+              <div className="rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
+                Valgt: {horizonLabels[horizon]}
+              </div>
             </div>
           </div>
           <ResponsiveContainer width="100%" height={390}>
@@ -337,9 +355,19 @@ export default function App() {
               <tbody>
                 {filteredRows.map((row) => {
                   return (
-                    <tr key={row.cvr}>
+                    <tr
+                      key={row.cvr}
+                      className={cn('cursor-pointer', selectedCvr === row.cvr && 'selected-municipality')}
+                      onClick={() => setSelectedCvr(row.cvr)}
+                    >
                       <td>
-                        <div className="font-medium text-slate-900">{row.name}</div>
+                        <button
+                          className="font-medium text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                          onClick={() => setSelectedCvr(row.cvr)}
+                          aria-pressed={selectedCvr === row.cvr}
+                        >
+                          {row.name}
+                        </button>
                         <div className="text-[11px] text-slate-400">CVR {row.cvr} · kommunekode {row.municipalityCode}</div>
                       </td>
                       <td className="num font-semibold text-slate-950">{formatBuildings(valueFor(row, horizon))}</td>

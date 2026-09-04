@@ -112,14 +112,9 @@ function totalFor(row: Municipality) {
   )
 }
 
-function inventoryTotalFor(row: Municipality) {
-  return Object.values(row.metrics.buildings).reduce((sum, value) => sum + value, 0)
-    + row.unlabelled.buildings
-}
-
 function shareFor(row: Municipality, horizon: Horizon) {
-  const inventoryTotal = inventoryTotalFor(row)
-  return inventoryTotal === 0 ? 0 : valueFor(row, horizon) / inventoryTotal
+  const allPeriods = totalFor(row)
+  return allPeriods === 0 ? 0 : valueFor(row, horizon) / allPeriods
 }
 
 function formatBuildings(value: number) {
@@ -312,7 +307,7 @@ export default function App() {
             <div className="mr-auto">
               <h2 className="text-[15px] font-semibold text-slate-900">Kommuner med udløb i den valgte periode</h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                {affectedMunicipalities} kommuner · {formatBuildings(totals[horizon])} · Andel beregnet af alle kommunens bygninger
+                {affectedMunicipalities} kommuner · {formatBuildings(totals[horizon])} · Andel beregnet af bygninger i alle perioder
               </p>
             </div>
             <div className="relative w-full lg:w-72">

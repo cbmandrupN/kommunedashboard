@@ -31,7 +31,7 @@ type Horizon = Year
 type ChartBucket = Horizon | 'missing'
 type Bucket = 'expired' | Year
 type Metric = Record<Bucket, number>
-type SortKey = 'name' | 'selected' | 'share' | 'total' | 'missing'
+type SortKey = 'name' | 'selected' | 'share' | 'valid' | 'missing'
 type TableMode = 'year' | 'missing'
 
 type Municipality = {
@@ -45,6 +45,8 @@ type Municipality = {
   }
   unlabelled: { buildings: number; area: number }
   missingLabel: { buildings: number; area: number }
+  eligibleBuildings: number
+  validLabelBuildings: number
 }
 
 type DashboardData = {
@@ -115,16 +117,10 @@ function valueFor(row: Municipality, horizon: Horizon) {
   return row.metrics.buildings[horizon]
 }
 
-function totalFor(row: Municipality) {
-  return YEARS.reduce(
-    (sum, bucket) => sum + row.metrics.buildings[bucket],
-    0,
-  )
-}
-
 function shareFor(row: Municipality, horizon: Horizon) {
-  const allPeriods = totalFor(row)
-  return allPeriods === 0 ? 0 : valueFor(row, horizon) / allPeriods
+  return row.eligibleBuildings === 0
+    ? 0
+    : valueFor(row, horizon) / row.eligibleBuildings
 }
 
 function missingFor(row: Municipality) {
@@ -200,7 +196,7 @@ export default function App() {
         if (sortKey === 'name') result = a.name.localeCompare(b.name, 'da')
         if (sortKey === 'selected') result = valueFor(a, horizon) - valueFor(b, horizon)
         if (sortKey === 'share') result = shareFor(a, horizon) - shareFor(b, horizon)
-        if (sortKey === 'total') result = totalFor(a) - totalFor(b)
+        if (sortKey === 'valid') result = a.validLabelBuildings - b.validLabelBuildings
         if (sortKey === 'missing') result = missingFor(a) - missingFor(b)
         return sortDescending ? -result : result
       })
@@ -408,7 +404,7 @@ export default function App() {
               <p className="mt-0.5 text-xs text-slate-500">
                 {tableMode === 'missing'
                   ? `${municipalitiesMissingLabels} kommuner · ${formatBuildings(dashboard.totalsMissingLabel.buildings)} · udløbet eller ikke fundet`
-                  : `${affectedMunicipalities} kommuner · ${formatBuildings(totals[horizon])} · Andel beregnet af bygninger i alle perioder`}
+                  : `${affectedMunicipalities} kommuner · ${formatBuildings(totals[horizon])} · Andel af alle mærkningspligtige bygninger`}
               </p>
             </div>
             <div className="relative w-full lg:w-72">
@@ -432,7 +428,7 @@ export default function App() {
                   <SortableHeader label="Kommune" active={sortKey === 'name'} descending={sortDescending} onClick={() => setSort('name')} />
                   <SortableHeader label={`Bygninger · ${horizon}`} active={sortKey === 'selected'} descending={sortDescending} onClick={() => setSort('selected')} align="right" />
                   <SortableHeader label={`Andel · ${horizon}`} active={sortKey === 'share'} descending={sortDescending} onClick={() => setSort('share')} align="right" />
-                  <SortableHeader label="Alle perioder" active={sortKey === 'total'} descending={sortDescending} onClick={() => setSort('total')} align="right" />
+                  <SortableHeader label="Gyldige mærker" active={sortKey === 'valid'} descending={sortDescending} onClick={() => setSort('valid')} align="right" />
                   <SortableHeader label="Mangler gyldigt mærke" active={sortKey === 'missing'} descending={sortDescending} onClick={() => setSort('missing')} align="right" />
                 </tr>
               </thead>
@@ -456,7 +452,7 @@ export default function App() {
                       </td>
                       <td className="num font-semibold text-slate-950">{formatBuildings(valueFor(row, horizon))}</td>
                       <td className="num font-semibold text-blue-700">{percentageFormat.format(shareFor(row, horizon))}</td>
-                      <td className="num text-slate-500">{formatBuildings(totalFor(row))}</td>
+                      <td className="num text-slate-500">{formatBuildings(row.validLabelBuildings)}</td>
                       <td className="num font-semibold text-red-700">{formatBuildings(missingFor(row))}</td>
                     </tr>
                   )

@@ -28,11 +28,11 @@ const YEARS = [
 
 type Year = typeof YEARS[number]
 type Horizon = Year
-type ChartBucket = Horizon | 'missing'
+type ChartBucket = Horizon | 'expired' | 'unlabelled'
 type Bucket = 'expired' | Year
 type Metric = Record<Bucket, number>
-type SortKey = 'name' | 'selected' | 'share' | 'valid' | 'missing'
-type TableMode = 'year' | 'missing'
+type SortKey = 'name' | 'selected' | 'share' | 'valid' | 'expired' | 'unlabelled'
+type TableMode = 'year' | 'expired' | 'unlabelled'
 
 type Municipality = {
   name: string
@@ -123,8 +123,12 @@ function shareFor(row: Municipality, horizon: Horizon) {
     : valueFor(row, horizon) / row.eligibleBuildings
 }
 
-function missingFor(row: Municipality) {
-  return row.missingLabel.buildings
+function expiredFor(row: Municipality) {
+  return row.metrics.buildings.expired
+}
+
+function unlabelledFor(row: Municipality) {
+  return row.unlabelled.buildings
 }
 
 function formatBuildings(value: number) {
@@ -173,9 +177,15 @@ export default function App() {
     setSortDescending(true)
   }
 
-  const selectMissingLabels = () => {
-    setTableMode('missing')
-    setSortKey('missing')
+  const selectExpiredLabels = () => {
+    setTableMode('expired')
+    setSortKey('expired')
+    setSortDescending(true)
+  }
+
+  const selectUnlabelled = () => {
+    setTableMode('unlabelled')
+    setSortKey('unlabelled')
     setSortDescending(true)
   }
 
@@ -186,9 +196,11 @@ export default function App() {
         const matchesQuery = !normalizedQuery
           || row.name.toLocaleLowerCase('da-DK').includes(normalizedQuery)
           || row.cvr.includes(normalizedQuery)
-        const hasRelevantBuildings = tableMode === 'missing'
-          ? missingFor(row) > 0
-          : valueFor(row, horizon) > 0
+        const hasRelevantBuildings = tableMode === 'expired'
+          ? expiredFor(row) > 0
+          : tableMode === 'unlabelled'
+            ? unlabelledFor(row) > 0
+            : valueFor(row, horizon) > 0
         return matchesQuery && hasRelevantBuildings
       })
       .sort((a, b) => {
@@ -197,11 +209,16 @@ export default function App() {
         if (sortKey === 'selected') result = valueFor(a, horizon) - valueFor(b, horizon)
         if (sortKey === 'share') result = shareFor(a, horizon) - shareFor(b, horizon)
         if (sortKey === 'valid') result = a.validLabelBuildings - b.validLabelBuildings
-        if (sortKey === 'missing') result = missingFor(a) - missingFor(b)
+        if (sortKey === 'expired') result = expiredFor(a) - expiredFor(b)
+        if (sortKey === 'unlabelled') result = unlabelledFor(a) - unlabelledFor(b)
         return sortDescending ? -result : result
       })
   }, [horizon, query, sortDescending, sortKey, tableMode])
 
+  const totalUnlabelledBuildings = municipalities.reduce(
+    (sum, row) => sum + unlabelledFor(row),
+    0,
+  )
   const timelineData: Array<{
     name: string
     bucket: ChartBucket
@@ -215,25 +232,51 @@ export default function App() {
       color: tableMode === 'year' && bucket === horizon ? '#0f172a' : chartColors[bucket],
     })),
     {
-      name: 'Mangler',
-      bucket: 'missing',
+      name: 'Udløbet',
+      bucket: 'expired',
       value: selectedMunicipality
-        ? missingFor(selectedMunicipality)
-        : dashboard.totalsMissingLabel.buildings,
-      color: tableMode === 'missing' ? '#0f172a' : '#dc2626',
+        ? expiredFor(selectedMunicipality)
+        : totals.expired,
+      color: tableMode === 'expired' ? '#0f172a' : '#ea580c',
+    },
+    {
+      name: 'Mangler',
+      bucket: 'unlabelled',
+      value: selectedMunicipality
+        ? unlabelledFor(selectedMunicipality)
+        : totalUnlabelledBuildings,
+      color: tableMode === 'unlabelled' ? '#0f172a' : '#dc2626',
     },
   ]
 
   const affectedMunicipalities = municipalities.filter(
     (row) => valueFor(row, horizon) > 0,
   ).length
-  const municipalitiesMissingLabels = municipalities.filter(
-    (row) => missingFor(row) > 0,
+  const municipalitiesWithExpiredLabels = municipalities.filter(
+    (row) => expiredFor(row) > 0,
+  ).length
+  const municipalitiesWithoutLabels = municipalities.filter(
+    (row) => unlabelledFor(row) > 0,
   ).length
   const nextPeak = YEARS.reduce((best, year) => (
     dashboard.totals.buildings[year] > dashboard.totals.buildings[best] ? year : best
   ), YEARS[0])
   const sourceDate = dateFormat.format(new Date(`${dashboard.asOf}T12:00:00`))
+  const selectedLabel = tableMode === 'expired'
+    ? 'Udløbet mærke'
+    : tableMode === 'unlabelled'
+      ? 'Mangler mærke'
+      : horizonLabels[horizon]
+  const tableTitle = tableMode === 'expired'
+    ? 'Kommuner med bygninger, hvor energimærket er udløbet'
+    : tableMode === 'unlabelled'
+      ? 'Kommuner med bygninger uden fundet energimærke'
+      : 'Kommuner med udløb i den valgte periode'
+  const tableSummary = tableMode === 'expired'
+    ? `${municipalitiesWithExpiredLabels} kommuner · ${formatBuildings(totals.expired)} · mærket er udløbet`
+    : tableMode === 'unlabelled'
+      ? `${municipalitiesWithoutLabels} kommuner · ${formatBuildings(totalUnlabelledBuildings)} · intet mærke fundet`
+      : `${affectedMunicipalities} kommuner · ${formatBuildings(totals[horizon])} · Andel af alle mærkningspligtige bygninger`
 
   const setSort = (key: SortKey) => {
     if (sortKey === key) setSortDescending((value) => !value)
@@ -283,7 +326,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløber i 2026"
@@ -312,13 +355,22 @@ export default function App() {
             onClick={() => selectHorizon(nextPeak)}
           />
           <DeadlineCard
+            icon={<CalendarClock size={18} />}
+            label="Udløbet mærke"
+            value={formatBuildings(totals.expired)}
+            note={`${municipalitiesWithExpiredLabels} kommuner`}
+            tone="orange"
+            active={tableMode === 'expired'}
+            onClick={selectExpiredLabels}
+          />
+          <DeadlineCard
             icon={<CircleAlert size={18} />}
-            label="Mangler gyldigt mærke"
-            value={formatBuildings(dashboard.totalsMissingLabel.buildings)}
-            note={`${municipalitiesMissingLabels} kommuner · udløbet eller ikke fundet`}
+            label="Mangler mærke"
+            value={formatBuildings(totalUnlabelledBuildings)}
+            note={`${municipalitiesWithoutLabels} kommuner · intet mærke fundet`}
             tone="red"
-            active={tableMode === 'missing'}
-            onClick={selectMissingLabels}
+            active={tableMode === 'unlabelled'}
+            onClick={selectUnlabelled}
           />
         </section>
 
@@ -342,7 +394,7 @@ export default function App() {
               </h2>
               <p className="mt-1 text-xs text-slate-500">
                 {selectedMunicipality
-                  ? 'Grafen viser kun den valgte kommune. Klik på et år eller Mangler.'
+                  ? 'Grafen viser kun den valgte kommune. Klik på et år, Udløbet eller Mangler.'
                   : 'Klik på en kommune i tabellen for at vise dens bygninger i grafen.'}
               </p>
             </div>
@@ -358,7 +410,7 @@ export default function App() {
                 </>
               )}
               <div className="rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
-                Valgt: {tableMode === 'missing' ? 'Mangler gyldigt mærke' : horizonLabels[horizon]}
+                Valgt: {selectedLabel}
               </div>
             </div>
           </div>
@@ -369,7 +421,11 @@ export default function App() {
               <YAxis tickFormatter={(value) => compactFormat.format(Number(value))} width={54} fontSize={11} tickLine={false} axisLine={false} />
               <Tooltip
                 formatter={(value) => formatBuildings(Number(value))}
-                labelFormatter={(label) => label === 'Mangler' ? 'Mangler gyldigt mærke' : `Udløber i ${label}`}
+                labelFormatter={(label) => label === 'Udløbet'
+                  ? 'Udløbet mærke'
+                  : label === 'Mangler'
+                    ? 'Mangler mærke'
+                    : `Udløber i ${label}`}
               />
               <Bar
                 dataKey="value"
@@ -383,9 +439,11 @@ export default function App() {
                     key={item.name}
                     fill={item.color}
                     className="cursor-pointer"
-                    onClick={() => item.bucket === 'missing'
-                      ? selectMissingLabels()
-                      : selectHorizon(item.bucket)}
+                    onClick={() => item.bucket === 'expired'
+                      ? selectExpiredLabels()
+                      : item.bucket === 'unlabelled'
+                        ? selectUnlabelled()
+                        : selectHorizon(item.bucket)}
                   />
                 ))}
               </Bar>
@@ -397,14 +455,10 @@ export default function App() {
           <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center">
             <div className="mr-auto">
               <h2 className="text-[15px] font-semibold text-slate-900">
-                {tableMode === 'missing'
-                  ? 'Kommuner med bygninger, der mangler et gyldigt energimærke'
-                  : 'Kommuner med udløb i den valgte periode'}
+                {tableTitle}
               </h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                {tableMode === 'missing'
-                  ? `${municipalitiesMissingLabels} kommuner · ${formatBuildings(dashboard.totalsMissingLabel.buildings)} · udløbet eller ikke fundet`
-                  : `${affectedMunicipalities} kommuner · ${formatBuildings(totals[horizon])} · Andel af alle mærkningspligtige bygninger`}
+                {tableSummary}
               </p>
             </div>
             <div className="relative w-full lg:w-72">
@@ -422,14 +476,15 @@ export default function App() {
           </div>
 
           <div className="max-h-[650px] overflow-auto">
-            <table className="min-w-[900px]">
+            <table className="min-w-[1100px]">
               <thead>
                 <tr>
                   <SortableHeader label="Kommune" active={sortKey === 'name'} descending={sortDescending} onClick={() => setSort('name')} />
                   <SortableHeader label={`Bygninger · ${horizon}`} active={sortKey === 'selected'} descending={sortDescending} onClick={() => setSort('selected')} align="right" />
                   <SortableHeader label={`Andel · ${horizon}`} active={sortKey === 'share'} descending={sortDescending} onClick={() => setSort('share')} align="right" />
                   <SortableHeader label="Gyldige mærker" active={sortKey === 'valid'} descending={sortDescending} onClick={() => setSort('valid')} align="right" />
-                  <SortableHeader label="Mangler gyldigt mærke" active={sortKey === 'missing'} descending={sortDescending} onClick={() => setSort('missing')} align="right" />
+                  <SortableHeader label="Udløbet mærke" active={sortKey === 'expired'} descending={sortDescending} onClick={() => setSort('expired')} align="right" />
+                  <SortableHeader label="Mangler mærke" active={sortKey === 'unlabelled'} descending={sortDescending} onClick={() => setSort('unlabelled')} align="right" />
                 </tr>
               </thead>
               <tbody>
@@ -453,7 +508,8 @@ export default function App() {
                       <td className="num font-semibold text-slate-950">{formatBuildings(valueFor(row, horizon))}</td>
                       <td className="num font-semibold text-blue-700">{percentageFormat.format(shareFor(row, horizon))}</td>
                       <td className="num text-slate-500">{formatBuildings(row.validLabelBuildings)}</td>
-                      <td className="num font-semibold text-red-700">{formatBuildings(missingFor(row))}</td>
+                      <td className="num font-semibold text-orange-700">{formatBuildings(expiredFor(row))}</td>
+                      <td className="num font-semibold text-red-700">{formatBuildings(unlabelledFor(row))}</td>
                     </tr>
                   )
                 })}
@@ -462,9 +518,11 @@ export default function App() {
           </div>
           {filteredRows.length === 0 && (
             <div className="px-5 py-12 text-center text-sm text-slate-500">
-              {tableMode === 'missing'
-                ? 'Ingen kommuner har bygninger, der mangler et gyldigt energimærke.'
-                : 'Ingen kommuner har bygninger, hvor energimærket udløber i den valgte periode.'}
+              {tableMode === 'expired'
+                ? 'Ingen kommuner har bygninger med et udløbet energimærke.'
+                : tableMode === 'unlabelled'
+                  ? 'Ingen kommuner har bygninger uden et fundet energimærke.'
+                  : 'Ingen kommuner har bygninger, hvor energimærket udløber i den valgte periode.'}
             </div>
           )}
         </Card>

@@ -10,7 +10,6 @@ import {
   YAxis,
 } from 'recharts'
 import {
-  AlertTriangle,
   Building2,
   CalendarClock,
   CheckCircle2,
@@ -27,9 +26,10 @@ const YEARS = [
 ] as const
 
 type Year = typeof YEARS[number]
-type Horizon = 'expired' | Year
+type Horizon = Year
+type Bucket = 'expired' | Year
 type Basis = 'labels' | 'buildings' | 'area'
-type Metric = Record<Horizon, number>
+type Metric = Record<Bucket, number>
 type SortKey = 'name' | 'selected' | 'total'
 
 type Municipality = {
@@ -64,7 +64,6 @@ const compactFormat = new Intl.NumberFormat('da-DK', { notation: 'compact', maxi
 const dateFormat = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'long', year: 'numeric' })
 
 const horizonLabels: Record<Horizon, string> = {
-  expired: 'Allerede udløbet',
   '2026': 'Udløber i 2026',
   '2027': 'Udløber i 2027',
   '2028': 'Udløber i 2028',
@@ -86,7 +85,6 @@ const basisLabels: Record<Basis, string> = {
 }
 
 const chartColors: Record<Horizon, string> = {
-  expired: '#dc2626',
   '2026': '#f97316',
   '2027': '#eab308',
   '2028': '#65a30d',
@@ -106,7 +104,7 @@ function valueFor(row: Municipality, basis: Basis, horizon: Horizon) {
 }
 
 function totalFor(row: Municipality, basis: Basis) {
-  return (['expired', ...YEARS] as Horizon[]).reduce(
+  return YEARS.reduce(
     (sum, bucket) => sum + row.metrics[basis][bucket],
     0,
   )
@@ -118,24 +116,12 @@ function formatValue(value: number, basis: Basis) {
   return `${numberFormat.format(value)} mærker`
 }
 
-function nextDeadline(row: Municipality) {
-  const labels = row.metrics.labels
-  if (labels.expired > 0) return { label: 'Udløbet', className: 'border-red-200 bg-red-50 text-red-700' }
-  for (const year of YEARS) {
-    if (labels[year] > 0) {
-      return { label: year, className: 'border-blue-200 bg-blue-50 text-blue-700' }
-    }
-  }
-  return { label: 'Intet mærke', className: 'border-slate-200 bg-slate-100 text-slate-600' }
-}
-
 function downloadCsv(rows: Municipality[]) {
-  const header = ['Kommune', 'CVR', 'Kommunekode', 'Udløbet', ...YEARS]
+  const header = ['Kommune', 'CVR', 'Kommunekode', ...YEARS]
   const lines = rows.map((row) => [
     row.name,
     row.cvr,
     row.municipalityCode,
-    row.metrics.labels.expired,
     ...YEARS.map((year) => row.metrics.labels[year]),
   ].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(';'))
   const blob = new Blob([`\uFEFF${[header.join(';'), ...lines].join('\n')}`], { type: 'text/csv;charset=utf-8' })
@@ -149,7 +135,7 @@ function downloadCsv(rows: Municipality[]) {
 
 export default function App() {
   const [basis, setBasis] = useState<Basis>('labels')
-  const [horizon, setHorizon] = useState<Horizon>('expired')
+  const [horizon, setHorizon] = useState<Horizon>('2026')
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('selected')
   const [sortDescending, setSortDescending] = useState(true)
@@ -179,8 +165,8 @@ export default function App() {
       })
   }, [basis, horizon, query, sortDescending, sortKey])
 
-  const timelineData = (['expired', ...YEARS] as Horizon[]).map((bucket) => ({
-    name: bucket === 'expired' ? 'Udløbet' : bucket,
+  const timelineData = YEARS.map((bucket) => ({
+    name: bucket,
     bucket,
     value: totals[bucket],
     color: bucket === horizon ? '#0f172a' : chartColors[bucket],
@@ -256,16 +242,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-          <DeadlineCard
-            icon={<AlertTriangle size={18} />}
-            label="Allerede udløbet"
-            value={formatValue(dashboard.totals.labels.expired, 'labels')}
-            note={`${municipalities.filter((row) => row.metrics.labels.expired > 0).length} kommuner`}
-            tone="red"
-            active={horizon === 'expired'}
-            onClick={() => selectHorizon('expired')}
-          />
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløber i 2026"
@@ -312,7 +289,7 @@ export default function App() {
               <YAxis tickFormatter={(value) => compactFormat.format(Number(value))} width={54} fontSize={11} tickLine={false} axisLine={false} />
               <Tooltip
                 formatter={(value) => formatValue(Number(value), basis)}
-                labelFormatter={(label) => label === 'Udløbet' ? 'Allerede udløbet' : `Udløber i ${label}`}
+                labelFormatter={(label) => `Udløber i ${label}`}
               />
               <Bar
                 dataKey="value"
@@ -361,8 +338,7 @@ export default function App() {
               <thead>
                 <tr>
                   <SortableHeader label="Kommune" active={sortKey === 'name'} descending={sortDescending} onClick={() => setSort('name')} />
-                  <th>Næste frist</th>
-                  <SortableHeader label={`${basisLabels[basis]} · ${horizon === 'expired' ? 'udløbet' : horizon}`} active={sortKey === 'selected'} descending={sortDescending} onClick={() => setSort('selected')} align="right" />
+                  <SortableHeader label={`${basisLabels[basis]} · ${horizon}`} active={sortKey === 'selected'} descending={sortDescending} onClick={() => setSort('selected')} align="right" />
                   {basis !== 'labels' && <th className="num">Energimærker</th>}
                   {basis !== 'buildings' && <th className="num">Bygninger</th>}
                   {basis !== 'area' && <th className="num">Areal</th>}
@@ -371,17 +347,11 @@ export default function App() {
               </thead>
               <tbody>
                 {filteredRows.map((row) => {
-                  const deadline = nextDeadline(row)
                   return (
                     <tr key={row.cvr}>
                       <td>
                         <div className="font-medium text-slate-900">{row.name}</div>
                         <div className="text-[11px] text-slate-400">CVR {row.cvr} · kommunekode {row.municipalityCode}</div>
-                      </td>
-                      <td>
-                        <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', deadline.className)}>
-                          {deadline.label}
-                        </span>
                       </td>
                       <td className="num font-semibold text-slate-950">{formatValue(valueFor(row, basis, horizon), basis)}</td>
                       {basis !== 'labels' && <td className="num">{numberFormat.format(row.metrics.labels[horizon])}</td>}
@@ -421,12 +391,11 @@ function DeadlineCard({
   label: string
   value: string
   note: string
-  tone: 'red' | 'orange' | 'yellow' | 'green'
+  tone: 'orange' | 'yellow' | 'green'
   active: boolean
   onClick: () => void
 }) {
   const tones = {
-    red: 'bg-red-50 text-red-700',
     orange: 'bg-orange-50 text-orange-700',
     yellow: 'bg-yellow-50 text-yellow-700',
     green: 'bg-green-50 text-green-700',

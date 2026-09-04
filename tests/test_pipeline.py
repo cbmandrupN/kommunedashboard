@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -15,6 +17,7 @@ from pipeline import (
     _parse_emodata_date,
     _split_values,
     aggregate_labels,
+    write_building_exports,
 )
 
 
@@ -141,6 +144,25 @@ class PipelineTests(unittest.TestCase):
             quality={},
         )
         self.assertEqual(result["totalsMissingLabel"]["buildings"], 0)
+
+    def test_building_export_is_valid_xlsx(self) -> None:
+        building = Building("1", "101", ("10",), "2", 300)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            export_dir = Path(temporary_directory)
+            write_building_exports(
+                export_dir=export_dir,
+                municipalities={"1": "Test Kommune"},
+                buildings={("1", "10", "2"): building},
+                labels={},
+                as_of=date(2026, 9, 4),
+            )
+            workbook_path = export_dir / "1.xlsx"
+            self.assertTrue(workbook_path.exists())
+            with zipfile.ZipFile(workbook_path) as workbook:
+                worksheet = workbook.read("xl/worksheets/sheet1.xml").decode()
+            self.assertIn("Test Kommune", worksheet)
+            self.assertIn("Mangler energimærke", worksheet)
+            self.assertIn("BFE-nummer", worksheet)
 
 
 if __name__ == "__main__":

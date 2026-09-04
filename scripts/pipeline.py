@@ -17,6 +17,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 from xml.etree import ElementTree as ET
+from xml.sax.saxutils import escape
 
 
 SHEET_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
@@ -180,6 +181,151 @@ def _bucket(valid_to: date, as_of: date) -> str | None:
     return year if year in YEARS else None
 
 
+def _xlsx_column(index: int) -> str:
+    result = ""
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
+def _xlsx_cell(reference: str, value: str | int) -> str:
+    if isinstance(value, int):
+        return f'<c r="{reference}"><v>{value}</v></c>'
+    return (
+        f'<c r="{reference}" t="inlineStr"><is><t xml:space="preserve">'
+        f"{escape(value)}</t></is></c>"
+    )
+
+
+def _write_xlsx(path: Path, rows: list[list[str | int]]) -> None:
+    worksheet_rows = []
+    for row_number, values in enumerate(rows, start=1):
+        cells = "".join(
+            _xlsx_cell(f"{_xlsx_column(column)}{row_number}", value)
+            for column, value in enumerate(values, start=1)
+        )
+        worksheet_rows.append(f'<row r="{row_number}">{cells}</row>')
+    last_column = _xlsx_column(max(len(row) for row in rows))
+    last_row = len(rows)
+    worksheet = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        '<sheetViews><sheetView workbookViewId="0">'
+        '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
+        "</sheetView></sheetViews>"
+        f'<dimension ref="A1:{last_column}{last_row}"/>'
+        "<sheetData>"
+        + "".join(worksheet_rows)
+        + "</sheetData>"
+        f'<autoFilter ref="A1:{last_column}{last_row}"/>'
+        "</worksheet>"
+    )
+    files = {
+        "[Content_Types].xml": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            "</Types>"
+        ),
+        "_rels/.rels": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            "</Relationships>"
+        ),
+        "xl/workbook.xml": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<sheets><sheet name="Bygninger" sheetId="1" r:id="rId1"/></sheets>'
+            "</workbook>"
+        ),
+        "xl/_rels/workbook.xml.rels": (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            "</Relationships>"
+        ),
+        "xl/worksheets/sheet1.xml": worksheet,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as workbook:
+        for filename, content in files.items():
+            workbook.writestr(filename, content.encode("utf-8"))
+
+
+def write_building_exports(
+    export_dir: Path,
+    municipalities: dict[str, str],
+    buildings: dict[tuple[str, str, str], Building],
+    labels: dict[str, dict[str, Any]],
+    as_of: date,
+) -> None:
+    latest_by_building: dict[tuple[str, str, str], tuple[str, date]] = {}
+    for serial, entry in labels.items():
+        valid_to = entry["validTo"]
+        for owner_buildings in entry["owners"].values():
+            for key in owner_buildings:
+                current = latest_by_building.get(key)
+                if current is None or valid_to > current[1]:
+                    latest_by_building[key] = (serial, valid_to)
+
+    buildings_by_cvr: dict[str, list[tuple[tuple[str, str, str], Building]]] = defaultdict(list)
+    for key, building in buildings.items():
+        buildings_by_cvr[building.cvr].append((key, building))
+
+    export_dir.mkdir(parents=True, exist_ok=True)
+    for cvr, municipality_name in municipalities.items():
+        data_rows: list[list[str | int]] = []
+        for key, building in buildings_by_cvr.get(cvr, []):
+            label = latest_by_building.get(key)
+            serial = label[0] if label else ""
+            valid_to = label[1] if label else None
+            if valid_to is None:
+                status = "Mangler energimærke"
+            elif valid_to < as_of:
+                status = "Udløbet"
+            else:
+                status = "Gyldigt"
+            data_rows.append(
+                [
+                    municipality_name,
+                    cvr,
+                    building.municipality_code,
+                    ", ".join(building.bfes),
+                    building.building_number,
+                    building.area,
+                    serial,
+                    valid_to.isoformat() if valid_to else "",
+                    status,
+                    "Ja" if valid_to is None or valid_to < as_of else "Nej",
+                ]
+            )
+        data_rows.sort(key=lambda row: (row[9] != "Ja", row[7] or "0000", row[3], row[4]))
+        _write_xlsx(
+            export_dir / f"{cvr}.xlsx",
+            [
+                [
+                    "Kommune",
+                    "CVR",
+                    "Geografisk kommunekode",
+                    "BFE-nummer",
+                    "Bygningsnummer",
+                    "Areal (m²)",
+                    "EM-nummer",
+                    "Gyldig til",
+                    "Status",
+                    "Mangler gyldigt mærke",
+                ],
+                *data_rows,
+            ],
+        )
+
+
 def _eligibility_exclusion_reason(
     use_code: str,
     area: int,
@@ -211,6 +357,7 @@ def import_workbook(
     inventory_path: Path,
     dashboard_path: Path,
     as_of: date,
+    export_dir: Path | None = None,
 ) -> dict[str, Any]:
     municipalities = load_municipalities(municipalities_path)
     municipality_code_counts: dict[str, dict[str, int]] = defaultdict(
@@ -350,6 +497,8 @@ def import_workbook(
             "unmatchedEnergyLabels": 0,
         },
     )
+    if export_dir:
+        write_building_exports(export_dir, municipalities, buildings, labels, as_of)
     write_dashboard(dashboard_path, dashboard)
     return dashboard
 
@@ -476,6 +625,7 @@ def update_from_emodata(
     inventory_path: Path,
     dashboard_path: Path,
     as_of: date,
+    export_dir: Path | None = None,
 ) -> dict[str, Any]:
     username = os.environ.get("EMODATA_USERNAME")
     password = os.environ.get("EMODATA_PASSWORD")
@@ -595,6 +745,8 @@ def update_from_emodata(
             "malformedEnergyLabels": malformed,
         },
     )
+    if export_dir:
+        write_building_exports(export_dir, municipalities, buildings, labels, as_of)
     write_dashboard(dashboard_path, dashboard)
     return dashboard
 
@@ -609,10 +761,12 @@ def _parse_args() -> argparse.Namespace:
     workbook.add_argument("--municipalities", type=Path, required=True)
     workbook.add_argument("--inventory", type=Path, required=True)
     workbook.add_argument("--dashboard", type=Path, required=True)
+    workbook.add_argument("--exports", type=Path)
 
     emodata = subparsers.add_parser("update-emodata")
     emodata.add_argument("--inventory", type=Path, required=True)
     emodata.add_argument("--dashboard", type=Path, required=True)
+    emodata.add_argument("--exports", type=Path)
     return parser.parse_args()
 
 
@@ -625,12 +779,14 @@ def main() -> int:
             args.inventory,
             args.dashboard,
             args.as_of,
+            args.exports,
         )
     else:
         dashboard = update_from_emodata(
             args.inventory,
             args.dashboard,
             args.as_of,
+            args.exports,
         )
     print(
         json.dumps(

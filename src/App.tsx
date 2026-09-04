@@ -28,6 +28,7 @@ const YEARS = [
 
 type Year = typeof YEARS[number]
 type Horizon = Year
+type ChartBucket = Horizon | 'missing'
 type Bucket = 'expired' | Year
 type Metric = Record<Bucket, number>
 type SortKey = 'name' | 'selected' | 'share' | 'total' | 'missing'
@@ -198,12 +199,27 @@ export default function App() {
       })
   }, [horizon, query, sortDescending, sortKey, tableMode])
 
-  const timelineData = YEARS.map((bucket) => ({
-    name: bucket,
-    bucket,
-    value: chartMetrics[bucket],
-    color: bucket === horizon ? '#0f172a' : chartColors[bucket],
-  }))
+  const timelineData: Array<{
+    name: string
+    bucket: ChartBucket
+    value: number
+    color: string
+  }> = [
+    ...YEARS.map((bucket) => ({
+      name: bucket,
+      bucket,
+      value: chartMetrics[bucket],
+      color: tableMode === 'year' && bucket === horizon ? '#0f172a' : chartColors[bucket],
+    })),
+    {
+      name: 'Mangler',
+      bucket: 'missing',
+      value: selectedMunicipality
+        ? missingFor(selectedMunicipality)
+        : dashboard.totalsMissingLabel.buildings,
+      color: tableMode === 'missing' ? '#0f172a' : '#dc2626',
+    },
+  ]
 
   const affectedMunicipalities = municipalities.filter(
     (row) => valueFor(row, horizon) > 0,
@@ -318,12 +334,12 @@ export default function App() {
             <div>
               <h2 className="text-[15px] font-semibold text-slate-900">
                 {selectedMunicipality
-                  ? `${selectedMunicipality.name}: bygninger, hvor energimærket udløber`
-                  : 'Bygninger, hvor energimærket udløber frem til 2037'}
+                  ? `${selectedMunicipality.name}: udløb og manglende energimærker`
+                  : 'Udløb og manglende gyldige energimærker frem til 2037'}
               </h2>
               <p className="mt-1 text-xs text-slate-500">
                 {selectedMunicipality
-                  ? 'Grafen viser kun den valgte kommune. Klik på en søjle for at vælge år.'
+                  ? 'Grafen viser kun den valgte kommune. Klik på et år eller Mangler.'
                   : 'Klik på en kommune i tabellen for at vise dens bygninger i grafen.'}
               </p>
             </div>
@@ -334,7 +350,7 @@ export default function App() {
                 </Button>
               )}
               <div className="rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
-                Valgt: {horizonLabels[horizon]}
+                Valgt: {tableMode === 'missing' ? 'Mangler gyldigt mærke' : horizonLabels[horizon]}
               </div>
             </div>
           </div>
@@ -345,7 +361,7 @@ export default function App() {
               <YAxis tickFormatter={(value) => compactFormat.format(Number(value))} width={54} fontSize={11} tickLine={false} axisLine={false} />
               <Tooltip
                 formatter={(value) => formatBuildings(Number(value))}
-                labelFormatter={(label) => `Udløber i ${label}`}
+                labelFormatter={(label) => label === 'Mangler' ? 'Mangler gyldigt mærke' : `Udløber i ${label}`}
               />
               <Bar
                 dataKey="value"
@@ -359,7 +375,9 @@ export default function App() {
                     key={item.name}
                     fill={item.color}
                     className="cursor-pointer"
-                    onClick={() => selectHorizon(item.bucket)}
+                    onClick={() => item.bucket === 'missing'
+                      ? selectMissingLabels()
+                      : selectHorizon(item.bucket)}
                   />
                 ))}
               </Bar>

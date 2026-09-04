@@ -1,0 +1,394 @@
+[
+  {
+    "name": "Aabenraa Kommune",
+    "cvr": "29189854"
+  },
+  {
+    "name": "Aalborg Kommune",
+    "cvr": "29189420"
+  },
+  {
+    "name": "Aarhus Kommune",
+    "cvr": "55133018"
+  },
+  {
+    "name": "Ærø Kommune",
+    "cvr": "28856075"
+  },
+  {
+    "name": "Albertslund Kommune",
+    "cvr": "66137112"
+  },
+  {
+    "name": "Allerød Kommune",
+    "cvr": "60183112"
+  },
+  {
+    "name": "Assens Kommune",
+    "cvr": "29189692"
+  },
+  {
+    "name": "Ballerup Kommune",
+    "cvr": "58271713"
+  },
+  {
+    "name": "Billund Kommune",
+    "cvr": "29189765"
+  },
+  {
+    "name": "Bornholms Regionskommune",
+    "cvr": "26696348"
+  },
+  {
+    "name": "Brøndby Kommune",
+    "cvr": "65113015"
+  },
+  {
+    "name": "Brønderslev Kommune",
+    "cvr": "29189501"
+  },
+  {
+    "name": "Dragør Kommune",
+    "cvr": "12881517"
+  },
+  {
+    "name": "Egedal Kommune",
+    "cvr": "29188386"
+  },
+  {
+    "name": "Esbjerg Kommune",
+    "cvr": "29189803"
+  },
+  {
+    "name": "Faaborg-Midtfyn Kommune",
+    "cvr": "29188645"
+  },
+  {
+    "name": "Fanø Kommune",
+    "cvr": "31210917"
+  },
+  {
+    "name": "Favrskov Kommune",
+    "cvr": "29189714"
+  },
+  {
+    "name": "Faxe Kommune",
+    "cvr": "29188475"
+  },
+  {
+    "name": "Fredensborg Kommune",
+    "cvr": "29188335"
+  },
+  {
+    "name": "Fredericia Kommune",
+    "cvr": "69116418"
+  },
+  {
+    "name": "Frederiksberg Kommune",
+    "cvr": "11259979"
+  },
+  {
+    "name": "Frederikshavn Kommune",
+    "cvr": "29189498"
+  },
+  {
+    "name": "Frederikssund Kommune",
+    "cvr": "29189129"
+  },
+  {
+    "name": "Furesø Kommune",
+    "cvr": "29188327"
+  },
+  {
+    "name": "Gentofte Kommune",
+    "cvr": "19438414"
+  },
+  {
+    "name": "Gladsaxe Kommune",
+    "cvr": "62761113"
+  },
+  {
+    "name": "Glostrup Kommune",
+    "cvr": "65120119"
+  },
+  {
+    "name": "Greve Kommune",
+    "cvr": "44023911"
+  },
+  {
+    "name": "Gribskov Kommune",
+    "cvr": "29188440"
+  },
+  {
+    "name": "Guldborgsund Kommune",
+    "cvr": "29188599"
+  },
+  {
+    "name": "Haderslev Kommune",
+    "cvr": "29189757"
+  },
+  {
+    "name": "Halsnæs Kommune",
+    "cvr": "29188416"
+  },
+  {
+    "name": "Hedensted Kommune",
+    "cvr": "29189587"
+  },
+  {
+    "name": "Helsingør Kommune",
+    "cvr": "64502018"
+  },
+  {
+    "name": "Herlev Kommune",
+    "cvr": "63640719"
+  },
+  {
+    "name": "Herning Kommune",
+    "cvr": "29189919"
+  },
+  {
+    "name": "Hillerød Kommune",
+    "cvr": "29189366"
+  },
+  {
+    "name": "Hjørring Kommune",
+    "cvr": "29189382"
+  },
+  {
+    "name": "Høje-Taastrup Kommune",
+    "cvr": "19501817"
+  },
+  {
+    "name": "Holbæk Kommune",
+    "cvr": "29189447"
+  },
+  {
+    "name": "Holstebro Kommune",
+    "cvr": "29189927"
+  },
+  {
+    "name": "Horsens Kommune",
+    "cvr": "29189889"
+  },
+  {
+    "name": "Hørsholm Kommune",
+    "cvr": "70960516"
+  },
+  {
+    "name": "Hvidovre Kommune",
+    "cvr": "55606617"
+  },
+  {
+    "name": "Ikast-Brande Kommune",
+    "cvr": "29189617"
+  },
+  {
+    "name": "Ishøj Kommune",
+    "cvr": "11931316"
+  },
+  {
+    "name": "Jammerbugt Kommune",
+    "cvr": "29189439"
+  },
+  {
+    "name": "Kalundborg Kommune",
+    "cvr": "29189595"
+  },
+  {
+    "name": "Kerteminde Kommune",
+    "cvr": "29189706"
+  },
+  {
+    "name": "Københavns Kommune",
+    "cvr": "64942212"
+  },
+  {
+    "name": "Køge Kommune",
+    "cvr": "29189374"
+  },
+  {
+    "name": "Kolding Kommune",
+    "cvr": "29189897"
+  },
+  {
+    "name": "Læsø Kommune",
+    "cvr": "45973328"
+  },
+  {
+    "name": "Langeland Kommune",
+    "cvr": "29188955"
+  },
+  {
+    "name": "Lejre Kommune",
+    "cvr": "29188548"
+  },
+  {
+    "name": "Lemvig Kommune",
+    "cvr": "29189935"
+  },
+  {
+    "name": "Lolland Kommune",
+    "cvr": "29188572"
+  },
+  {
+    "name": "Lyngby-Taarbæk Kommune",
+    "cvr": "11715311"
+  },
+  {
+    "name": "Mariagerfjord Kommune",
+    "cvr": "29189455"
+  },
+  {
+    "name": "Middelfart Kommune",
+    "cvr": "29189684"
+  },
+  {
+    "name": "Morsø Kommune",
+    "cvr": "41333014"
+  },
+  {
+    "name": "Næstved Kommune",
+    "cvr": "29189625"
+  },
+  {
+    "name": "Norddjurs Kommune",
+    "cvr": "29189986"
+  },
+  {
+    "name": "Nordfyns Kommune",
+    "cvr": "29188947"
+  },
+  {
+    "name": "Nyborg Kommune",
+    "cvr": "29189722"
+  },
+  {
+    "name": "Odder Kommune",
+    "cvr": "32264328"
+  },
+  {
+    "name": "Odense Kommune",
+    "cvr": "35209115"
+  },
+  {
+    "name": "Odsherred Kommune",
+    "cvr": "29188459"
+  },
+  {
+    "name": "Randers Kommune",
+    "cvr": "29189668"
+  },
+  {
+    "name": "Rebild Kommune",
+    "cvr": "29189463"
+  },
+  {
+    "name": "Ringkøbing-Skjern Kommune",
+    "cvr": "29189609"
+  },
+  {
+    "name": "Ringsted Kommune",
+    "cvr": "18957981"
+  },
+  {
+    "name": "Rødovre Kommune",
+    "cvr": "65307316"
+  },
+  {
+    "name": "Roskilde Kommune",
+    "cvr": "29189404"
+  },
+  {
+    "name": "Rudersdal Kommune",
+    "cvr": "29188378"
+  },
+  {
+    "name": "Samsø Kommune",
+    "cvr": "23795515"
+  },
+  {
+    "name": "Silkeborg Kommune",
+    "cvr": "29189641"
+  },
+  {
+    "name": "Skanderborg kommune",
+    "cvr": "29189633"
+  },
+  {
+    "name": "Skive Kommune",
+    "cvr": "29189579"
+  },
+  {
+    "name": "Slagelse Kommune",
+    "cvr": "29188505"
+  },
+  {
+    "name": "Solrød Kommune",
+    "cvr": "68534917"
+  },
+  {
+    "name": "Sønderborg Kommune",
+    "cvr": "29189773"
+  },
+  {
+    "name": "Sorø Kommune",
+    "cvr": "29189994"
+  },
+  {
+    "name": "Stevns Kommune",
+    "cvr": "29208654"
+  },
+  {
+    "name": "Struer Kommune",
+    "cvr": "29189951"
+  },
+  {
+    "name": "Svendborg Kommune",
+    "cvr": "29189730"
+  },
+  {
+    "name": "Syddjurs Kommune",
+    "cvr": "29189978"
+  },
+  {
+    "name": "Tårnby Kommune",
+    "cvr": "20310413"
+  },
+  {
+    "name": "Thisted Kommune",
+    "cvr": "29189560"
+  },
+  {
+    "name": "Tønder Kommune",
+    "cvr": "29189781"
+  },
+  {
+    "name": "Vallensbæk Kommune",
+    "cvr": "19583910"
+  },
+  {
+    "name": "Varde Kommune",
+    "cvr": "29189811"
+  },
+  {
+    "name": "Vejen Kommune",
+    "cvr": "29189838"
+  },
+  {
+    "name": "Vejle Kommune",
+    "cvr": "29189900"
+  },
+  {
+    "name": "Vesthimmerlands Kommune",
+    "cvr": "29189471"
+  },
+  {
+    "name": "Viborg Kommune",
+    "cvr": "29189846"
+  },
+  {
+    "name": "Vordingborg Kommune",
+    "cvr": "29189676"
+  }
+]

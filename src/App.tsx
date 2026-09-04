@@ -19,56 +19,49 @@ import {
   Search,
 } from 'lucide-react'
 import { Button, Card, Input, Select, cn } from './components/ui'
-import municipalitiesJson from './data/municipalities.json'
+import dashboardJson from './data/dashboard-data.json'
 
-type Measure = {
-  total: number
-  labelled: number
-  unlabelled: number
-  expired: number
-  expires2026: number
-  expires2027: number
-  expiresLater: number
-  recent: number
-}
+const YEARS = [
+  '2026', '2027', '2028', '2029', '2030', '2031',
+  '2032', '2033', '2034', '2035', '2036', '2037',
+] as const
+
+type Year = typeof YEARS[number]
+type Horizon = 'expired' | Year
+type Basis = 'labels' | 'buildings' | 'area'
+type Metric = Record<Horizon, number>
+type SortKey = 'name' | 'selected' | 'total'
 
 type Municipality = {
   name: string
   cvr: string
-  buildings: Measure
-  area: Measure
+  municipalityCode: string
+  metrics: Record<Basis, Metric>
+  unlabelled: { buildings: number; area: number }
 }
 
-type Basis = 'buildings' | 'area'
-type Horizon = 'expired' | '2026' | '2027' | '2028' | '2029' | '2030' | '2031' | '2032' | '2033' | '2034' | '2035' | '2036' | '2037'
-type SortKey = 'name' | 'selected' | 'expired' | 'expires2026' | 'expires2027'
+type DashboardData = {
+  schemaVersion: number
+  generatedAt: string
+  asOf: string
+  source: string
+  years: Year[]
+  totals: Record<Basis, Metric>
+  municipalities: Municipality[]
+  quality: {
+    municipalityCount: number
+    uniqueEnergyLabels: number
+    inventoryBuildings: number
+    unmatchedEnergyLabels?: number
+    unmatchedGeographicEnergyLabels?: number
+  }
+}
 
-const municipalities = municipalitiesJson as Municipality[]
+const dashboard = dashboardJson as DashboardData
+const municipalities = dashboard.municipalities
 const numberFormat = new Intl.NumberFormat('da-DK', { maximumFractionDigits: 0 })
 const compactFormat = new Intl.NumberFormat('da-DK', { notation: 'compact', maximumFractionDigits: 1 })
-
-const sourceTotals: Record<Basis, Measure> = {
-  buildings: {
-    total: 20094,
-    labelled: 16043,
-    unlabelled: 4051,
-    expired: 2181,
-    expires2026: 448,
-    expires2027: 1799,
-    expiresLater: 11615,
-    recent: 7947,
-  },
-  area: {
-    total: 30004287,
-    labelled: 25359747,
-    unlabelled: 4644540,
-    expired: 3165353,
-    expires2026: 660912,
-    expires2027: 2632973,
-    expiresLater: 18900509,
-    recent: 13023640,
-  },
-}
+const dateFormat = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'long', year: 'numeric' })
 
 const horizonLabels: Record<Horizon, string> = {
   expired: 'Allerede udløbet',
@@ -86,71 +79,87 @@ const horizonLabels: Record<Horizon, string> = {
   '2037': 'Udløber i 2037',
 }
 
-const colors = {
-  expired: '#dc2626',
-  expires2026: '#f97316',
-  expires2027: '#eab308',
-  expiresLater: '#16a34a',
+const basisLabels: Record<Basis, string> = {
+  labels: 'Energimærker',
+  buildings: 'Bygninger',
+  area: 'Kvadratmeter',
 }
 
-function amount(row: Municipality, basis: Basis, horizon: Horizon) {
-  const data = row[basis]
-  if (horizon === 'expired') return data.expired
-  if (horizon === '2026') return data.expires2026
-  if (horizon === '2027') return data.expires2027
-  return 0
+const chartColors: Record<Horizon, string> = {
+  expired: '#dc2626',
+  '2026': '#f97316',
+  '2027': '#eab308',
+  '2028': '#65a30d',
+  '2029': '#16a34a',
+  '2030': '#059669',
+  '2031': '#0d9488',
+  '2032': '#0891b2',
+  '2033': '#0284c7',
+  '2034': '#2563eb',
+  '2035': '#4f46e5',
+  '2036': '#7c3aed',
+  '2037': '#9333ea',
+}
+
+function valueFor(row: Municipality, basis: Basis, horizon: Horizon) {
+  return row.metrics[basis][horizon]
+}
+
+function totalFor(row: Municipality, basis: Basis) {
+  return (['expired', ...YEARS] as Horizon[]).reduce(
+    (sum, bucket) => sum + row.metrics[basis][bucket],
+    0,
+  )
 }
 
 function formatValue(value: number, basis: Basis) {
-  return basis === 'area' ? `${numberFormat.format(value)} m²` : `${numberFormat.format(value)} byg.`
+  if (basis === 'area') return `${numberFormat.format(value)} m²`
+  if (basis === 'buildings') return `${numberFormat.format(value)} byg.`
+  return `${numberFormat.format(value)} mærker`
 }
 
-function nextDeadline(data: Measure) {
-  if (data.expired > 0) return { label: 'Udløbet', className: 'border-red-200 bg-red-50 text-red-700' }
-  if (data.expires2026 > 0) return { label: '2026', className: 'border-orange-200 bg-orange-50 text-orange-700' }
-  if (data.expires2027 > 0) return { label: '2027', className: 'border-yellow-200 bg-yellow-50 text-yellow-700' }
-  if (data.expiresLater > 0) return { label: '2028+', className: 'border-green-200 bg-green-50 text-green-700' }
+function nextDeadline(row: Municipality) {
+  const labels = row.metrics.labels
+  if (labels.expired > 0) return { label: 'Udløbet', className: 'border-red-200 bg-red-50 text-red-700' }
+  for (const year of YEARS) {
+    if (labels[year] > 0) {
+      return { label: year, className: 'border-blue-200 bg-blue-50 text-blue-700' }
+    }
+  }
   return { label: 'Intet mærke', className: 'border-slate-200 bg-slate-100 text-slate-600' }
 }
 
-function downloadCsv(rows: Municipality[], basis: Basis) {
-  const header = [
-    'Kommune',
-    'CVR',
-    'Udløbet',
-    'Udløber 2026',
-    'Udløber 2027',
-    'Udløber 2028+',
-    'Uden energimærke',
-  ]
-  const lines = rows.map((row) => {
-    const data = row[basis]
-    return [
-      row.name,
-      row.cvr,
-      data.expired,
-      data.expires2026,
-      data.expires2027,
-      data.expiresLater,
-      data.unlabelled,
-    ].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(';')
-  })
+function downloadCsv(rows: Municipality[]) {
+  const header = ['Kommune', 'CVR', 'Kommunekode', 'Udløbet', ...YEARS]
+  const lines = rows.map((row) => [
+    row.name,
+    row.cvr,
+    row.municipalityCode,
+    row.metrics.labels.expired,
+    ...YEARS.map((year) => row.metrics.labels[year]),
+  ].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(';'))
   const blob = new Blob([`\uFEFF${[header.join(';'), ...lines].join('\n')}`], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `udloebsplan-kommuner-${basis}-2026-09-03.csv`
+  anchor.download = `udloebsplan-energimaerker-${dashboard.asOf}.csv`
   anchor.click()
   URL.revokeObjectURL(url)
 }
 
 export default function App() {
-  const [basis, setBasis] = useState<Basis>('buildings')
+  const [basis, setBasis] = useState<Basis>('labels')
   const [horizon, setHorizon] = useState<Horizon>('expired')
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('selected')
   const [sortDescending, setSortDescending] = useState(true)
-  const totals = sourceTotals[basis]
+  const totals = dashboard.totals[basis]
+
+  const selectHorizon = (value: Horizon) => {
+    setHorizon(value)
+    setSortKey('selected')
+    setSortDescending(true)
+  }
 
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('da-DK')
@@ -159,48 +168,31 @@ export default function App() {
         const matchesQuery = !normalizedQuery
           || row.name.toLocaleLowerCase('da-DK').includes(normalizedQuery)
           || row.cvr.includes(normalizedQuery)
-        return matchesQuery && amount(row, basis, horizon) > 0
+        return matchesQuery && valueFor(row, basis, horizon) > 0
       })
       .sort((a, b) => {
         let result = 0
         if (sortKey === 'name') result = a.name.localeCompare(b.name, 'da')
-        if (sortKey === 'selected') result = amount(a, basis, horizon) - amount(b, basis, horizon)
-        if (sortKey === 'expired') result = a[basis].expired - b[basis].expired
-        if (sortKey === 'expires2026') result = a[basis].expires2026 - b[basis].expires2026
-        if (sortKey === 'expires2027') result = a[basis].expires2027 - b[basis].expires2027
+        if (sortKey === 'selected') result = valueFor(a, basis, horizon) - valueFor(b, basis, horizon)
+        if (sortKey === 'total') result = totalFor(a, basis) - totalFor(b, basis)
         return sortDescending ? -result : result
       })
   }, [basis, horizon, query, sortDescending, sortKey])
 
-  const timelineData = (Object.keys(horizonLabels) as Horizon[]).map((year) => ({
-    name: year === 'expired' ? 'Udløbet' : year,
-    year,
-    value: year === 'expired'
-      ? totals.expired
-      : year === '2026'
-        ? totals.expires2026
-        : year === '2027'
-          ? totals.expires2027
-          : 0,
-    color: year === horizon
-      ? '#2563eb'
-      : year === 'expired'
-        ? colors.expired
-        : year === '2026'
-          ? colors.expires2026
-          : year === '2027'
-            ? colors.expires2027
-            : '#cbd5e1',
+  const timelineData = (['expired', ...YEARS] as Horizon[]).map((bucket) => ({
+    name: bucket === 'expired' ? 'Udløbet' : bucket,
+    bucket,
+    value: totals[bucket],
+    color: bucket === horizon ? '#0f172a' : chartColors[bucket],
   }))
 
-  const municipalityCount = municipalities.filter((row) => amount(row, basis, horizon) > 0).length
-  const selectedTotal = horizon === 'expired'
-    ? totals.expired
-    : horizon === '2026'
-      ? totals.expires2026
-      : horizon === '2027'
-        ? totals.expires2027
-        : 0
+  const affectedMunicipalities = municipalities.filter(
+    (row) => valueFor(row, basis, horizon) > 0,
+  ).length
+  const nextPeak = YEARS.reduce((best, year) => (
+    dashboard.totals.labels[year] > dashboard.totals.labels[best] ? year : best
+  ), YEARS[0])
+  const sourceDate = dateFormat.format(new Date(`${dashboard.asOf}T12:00:00`))
 
   const setSort = (key: SortKey) => {
     if (sortKey === key) setSortDescending((value) => !value)
@@ -223,7 +215,7 @@ export default function App() {
               <div className="text-[11px] text-slate-500">Planlægning af energimærker</div>
             </div>
           </div>
-          <div className="hidden text-xs text-slate-500 sm:block">Datagrundlag · 3. september 2026</div>
+          <div className="hidden text-xs text-slate-500 sm:block">Datagrundlag · {sourceDate}</div>
         </div>
       </header>
 
@@ -238,25 +230,25 @@ export default function App() {
                 </div>
                 <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Hvornår skal kommunerne have nye energimærker?</h1>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                  Find de kommuner, hvor energimærker allerede er udløbet eller udløber i de kommende år.
+                  Klik på et år og se de kommuner, der har flest energimærker til fornyelse.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="inline-flex rounded-lg border border-white/15 bg-white/5 p-1">
-                  <button
-                    onClick={() => setBasis('buildings')}
-                    className={cn('rounded-md px-3 py-1.5 text-xs font-semibold transition-colors', basis === 'buildings' ? 'bg-white text-slate-900' : 'text-slate-300 hover:text-white')}
-                  >
-                    Bygninger
-                  </button>
-                  <button
-                    onClick={() => setBasis('area')}
-                    className={cn('rounded-md px-3 py-1.5 text-xs font-semibold transition-colors', basis === 'area' ? 'bg-white text-slate-900' : 'text-slate-300 hover:text-white')}
-                  >
-                    Kvadratmeter
-                  </button>
+                  {(Object.keys(basisLabels) as Basis[]).map((value) => (
+                    <button
+                      key={value}
+                      onClick={() => setBasis(value)}
+                      className={cn(
+                        'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
+                        basis === value ? 'bg-white text-slate-900' : 'text-slate-300 hover:text-white',
+                      )}
+                    >
+                      {basisLabels[value]}
+                    </button>
+                  ))}
                 </div>
-                <Button variant="secondary" size="sm" onClick={() => downloadCsv(filteredRows, basis)}>
+                <Button variant="secondary" size="sm" onClick={() => downloadCsv(filteredRows)}>
                   <Download size={14} /> Eksportér plan
                 </Button>
               </div>
@@ -268,38 +260,38 @@ export default function App() {
           <DeadlineCard
             icon={<AlertTriangle size={18} />}
             label="Allerede udløbet"
-            value={formatValue(totals.expired, basis)}
-            note={`${municipalities.filter((row) => row[basis].expired > 0).length} kommuner`}
+            value={formatValue(dashboard.totals.labels.expired, 'labels')}
+            note={`${municipalities.filter((row) => row.metrics.labels.expired > 0).length} kommuner`}
             tone="red"
             active={horizon === 'expired'}
-            onClick={() => setHorizon('expired')}
+            onClick={() => selectHorizon('expired')}
           />
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløber i 2026"
-            value={formatValue(totals.expires2026, basis)}
-            note={`${municipalities.filter((row) => row[basis].expires2026 > 0).length} kommuner`}
+            value={formatValue(dashboard.totals.labels['2026'], 'labels')}
+            note={`${municipalities.filter((row) => row.metrics.labels['2026'] > 0).length} kommuner`}
             tone="orange"
             active={horizon === '2026'}
-            onClick={() => setHorizon('2026')}
+            onClick={() => selectHorizon('2026')}
           />
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløber i 2027"
-            value={formatValue(totals.expires2027, basis)}
-            note={`${municipalities.filter((row) => row[basis].expires2027 > 0).length} kommuner`}
+            value={formatValue(dashboard.totals.labels['2027'], 'labels')}
+            note={`${municipalities.filter((row) => row.metrics.labels['2027'] > 0).length} kommuner`}
             tone="yellow"
             active={horizon === '2027'}
-            onClick={() => setHorizon('2027')}
+            onClick={() => selectHorizon('2027')}
           />
           <DeadlineCard
             icon={<CheckCircle2 size={18} />}
-            label="Efter 2027 · år mangler"
-            value={formatValue(totals.expiresLater, basis)}
-            note="Afventer detaljeret datagrundlag"
+            label="Største kommende år"
+            value={`${nextPeak} · ${numberFormat.format(dashboard.totals.labels[nextPeak])}`}
+            note="unikke energimærker"
             tone="green"
-            active={Number(horizon) >= 2028}
-            onClick={() => setHorizon('2028')}
+            active={horizon === nextPeak}
+            onClick={() => selectHorizon(nextPeak)}
           />
         </section>
 
@@ -307,7 +299,7 @@ export default function App() {
           <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-[15px] font-semibold text-slate-900">Udløb af energimærker frem til 2037</h2>
-              <p className="mt-1 text-xs text-slate-500">Klik på en søjle for at se kommunerne, sorteret efter flest udløb i det valgte år.</p>
+              <p className="mt-1 text-xs text-slate-500">Klik på en søjle for at filtrere kommunerne og sortere efter flest udløb.</p>
             </div>
             <div className="rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
               Valgt: {horizonLabels[horizon]}
@@ -322,25 +314,24 @@ export default function App() {
                 formatter={(value) => formatValue(Number(value), basis)}
                 labelFormatter={(label) => label === 'Udløbet' ? 'Allerede udløbet' : `Udløber i ${label}`}
               />
-              <Bar dataKey="value" name={basis === 'buildings' ? 'Bygninger' : 'Areal'} radius={[5, 5, 0, 0]} maxBarSize={72}>
+              <Bar
+                dataKey="value"
+                name={basisLabels[basis]}
+                radius={[5, 5, 0, 0]}
+                maxBarSize={72}
+                minPointSize={3}
+              >
                 {timelineData.map((item) => (
                   <Cell
                     key={item.name}
                     fill={item.color}
                     className="cursor-pointer"
-                    onClick={() => setHorizon(item.year)}
+                    onClick={() => selectHorizon(item.bucket)}
                   />
                 ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-          <div className="mt-3 flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-blue-800">
-            <CalendarClock className="mt-0.5 shrink-0" size={15} />
-            <span>
-              2028–2037 står foreløbigt på nul, fordi det nuværende ark kun har én samlet kolonne for “efter 2027”.
-              De udfyldes og bliver klikbare med faktiske kommuner, når data med præcist udløbsår tilføjes.
-            </span>
-          </div>
         </Card>
 
         <Card className="overflow-hidden">
@@ -348,7 +339,7 @@ export default function App() {
             <div className="mr-auto">
               <h2 className="text-[15px] font-semibold text-slate-900">Kommuner med udløb i den valgte periode</h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                {municipalityCount} kommuner · {formatValue(selectedTotal, basis)} · {horizonLabels[horizon]}
+                {affectedMunicipalities} kommuner · {formatValue(totals[horizon], basis)} · {horizonLabels[horizon]}
               </p>
             </div>
             <div className="relative w-full lg:w-72">
@@ -360,46 +351,43 @@ export default function App() {
                 className="w-full pl-9"
               />
             </div>
-            <Select value={horizon} onChange={(event) => setHorizon(event.target.value as Horizon)}>
+            <Select value={horizon} onChange={(event) => selectHorizon(event.target.value as Horizon)}>
               {Object.entries(horizonLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </Select>
           </div>
 
           <div className="max-h-[650px] overflow-auto">
-            <table className="min-w-[1000px]">
+            <table className="min-w-[900px]">
               <thead>
                 <tr>
                   <SortableHeader label="Kommune" active={sortKey === 'name'} descending={sortDescending} onClick={() => setSort('name')} />
                   <th>Næste frist</th>
-                  <SortableHeader label="Udløbet" active={sortKey === 'expired'} descending={sortDescending} onClick={() => setSort('expired')} align="right" />
-                  <SortableHeader label="2026" active={sortKey === 'expires2026'} descending={sortDescending} onClick={() => setSort('expires2026')} align="right" />
-                  <SortableHeader label="2027" active={sortKey === 'expires2027'} descending={sortDescending} onClick={() => setSort('expires2027')} align="right" />
-                  <th className="num">2028+</th>
-                  <th className="num">Uden mærke</th>
-                  <SortableHeader label="Valgt periode" active={sortKey === 'selected'} descending={sortDescending} onClick={() => setSort('selected')} align="right" />
+                  <SortableHeader label={`${basisLabels[basis]} · ${horizon === 'expired' ? 'udløbet' : horizon}`} active={sortKey === 'selected'} descending={sortDescending} onClick={() => setSort('selected')} align="right" />
+                  {basis !== 'labels' && <th className="num">Energimærker</th>}
+                  {basis !== 'buildings' && <th className="num">Bygninger</th>}
+                  {basis !== 'area' && <th className="num">Areal</th>}
+                  <SortableHeader label="Alle perioder" active={sortKey === 'total'} descending={sortDescending} onClick={() => setSort('total')} align="right" />
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.map((row) => {
-                  const data = row[basis]
-                  const deadline = nextDeadline(data)
+                  const deadline = nextDeadline(row)
                   return (
                     <tr key={row.cvr}>
                       <td>
                         <div className="font-medium text-slate-900">{row.name}</div>
-                        <div className="text-[11px] text-slate-400">CVR {row.cvr}</div>
+                        <div className="text-[11px] text-slate-400">CVR {row.cvr} · kommunekode {row.municipalityCode}</div>
                       </td>
                       <td>
                         <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', deadline.className)}>
                           {deadline.label}
                         </span>
                       </td>
-                      <td className="num font-medium text-red-700">{formatValue(data.expired, basis)}</td>
-                      <td className="num text-orange-700">{formatValue(data.expires2026, basis)}</td>
-                      <td className="num text-yellow-700">{formatValue(data.expires2027, basis)}</td>
-                      <td className="num text-green-700">{formatValue(data.expiresLater, basis)}</td>
-                      <td className="num text-slate-500">{formatValue(data.unlabelled, basis)}</td>
-                      <td className="num font-semibold text-slate-950">{formatValue(amount(row, basis, horizon), basis)}</td>
+                      <td className="num font-semibold text-slate-950">{formatValue(valueFor(row, basis, horizon), basis)}</td>
+                      {basis !== 'labels' && <td className="num">{numberFormat.format(row.metrics.labels[horizon])}</td>}
+                      {basis !== 'buildings' && <td className="num">{numberFormat.format(row.metrics.buildings[horizon])}</td>}
+                      {basis !== 'area' && <td className="num">{numberFormat.format(row.metrics.area[horizon])} m²</td>}
+                      <td className="num text-slate-500">{formatValue(totalFor(row, basis), basis)}</td>
                     </tr>
                   )
                 })}
@@ -407,13 +395,14 @@ export default function App() {
             </table>
           </div>
           {filteredRows.length === 0 && (
-            <div className="px-5 py-12 text-center text-sm text-slate-500">Ingen kommuner matcher den valgte periode.</div>
+            <div className="px-5 py-12 text-center text-sm text-slate-500">Ingen kommuner har energimærker i den valgte periode.</div>
           )}
         </Card>
       </main>
 
-      <footer className="mx-auto max-w-[1500px] px-6 pb-8 pt-2 text-xs text-slate-400">
-        Kilde: Kommunedata_2026-09-03.xlsx
+      <footer className="mx-auto flex max-w-[1500px] flex-wrap justify-between gap-2 px-6 pb-8 pt-2 text-xs text-slate-400">
+        <span>Kilde: kommunalt bygningsudtræk · {numberFormat.format(dashboard.quality.uniqueEnergyLabels)} unikke energimærker</span>
+        <span>Opgjort pr. {sourceDate}</span>
       </footer>
     </div>
   )

@@ -135,6 +135,13 @@ function formatBuildings(value: number) {
   return `${numberFormat.format(value)} bygninger`
 }
 
+function downloadMunicipalityExport(municipality: Municipality) {
+  const anchor = document.createElement('a')
+  anchor.href = `${import.meta.env.BASE_URL}exports/${municipality.cvr}.xlsx`
+  anchor.download = `${municipality.name.toLocaleLowerCase('da-DK').replaceAll(' ', '-')}-bygninger.xlsx`
+  anchor.click()
+}
+
 function downloadCsv(rows: Municipality[]) {
   const header = ['Kommune', 'CVR', 'Kommunekode', ...YEARS]
   const lines = rows.map((row) => [
@@ -345,9 +352,14 @@ export default function App() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {selectedMunicipality && (
-                <Button variant="secondary" size="sm" onClick={() => setSelectedCvr(null)}>
-                  Vis alle kommuner
-                </Button>
+                <>
+                  <Button variant="secondary" size="sm" onClick={() => downloadMunicipalityExport(selectedMunicipality)}>
+                    <Download size={14} /> Hent Excel-udtræk
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => setSelectedCvr(null)}>
+                    Vis alle kommuner
+                  </Button>
+                </>
               )}
               <div className="rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
                 Valgt: {tableMode === 'missing' ? 'Mangler gyldigt mærke' : horizonLabels[horizon]}

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-04T08:20:05.818389+00:00",
+  "generatedAt": "2026-09-04T08:34:02.271924+00:00",
   "asOf": "2026-09-04",
   "source": "EMOData",
   "years": [
@@ -5560,9 +5560,9 @@
     "inventoryBuildings": 94889,
     "duplicateBuildingRows": 0,
     "labelsWithMultipleMunicipalOwners": 0,
-    "geographicEnergyLabelsReturned": 1264088,
+    "geographicEnergyLabelsReturned": 1264093,
     "matchedEnergyLabelCandidates": 26092,
-    "unmatchedGeographicEnergyLabels": 1215432,
+    "unmatchedGeographicEnergyLabels": 1215437,
     "malformedEnergyLabels": 22564,
     "municipalityCount": 98,
     "municipalitiesWithLabels": 98,

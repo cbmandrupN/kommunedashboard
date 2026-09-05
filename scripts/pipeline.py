@@ -61,6 +61,8 @@ class Building:
     street: str = ""
     house_number: str = ""
     postal_code: str = ""
+    source_energy_label: str = ""
+    source_valid_to: date | None = None
 
     def compact(self) -> list[Any]:
         return [
@@ -72,6 +74,8 @@ class Building:
             self.street,
             self.house_number,
             self.postal_code,
+            self.source_energy_label,
+            self.source_valid_to.isoformat() if self.source_valid_to else "",
         ]
 
 
@@ -461,6 +465,9 @@ def import_workbook(
         street = row.get(_find_column(row, "Vejnavn"), "").strip()
         house_number = row.get(_find_column(row, "Husnr."), "").strip()
         postal_code = row.get(_find_column(row, "Postnr."), "").strip()
+        energy_label = row.get(_find_column(row, "EM-nr"), "").strip()
+        valid_to_raw = row.get(_find_column(row, "Gyldig til"), "").strip()
+        source_valid_to = _excel_date(valid_to_raw) if valid_to_raw else None
         building_key = (cvr, sfe or "|".join(bfe_values), building_number)
         first_source_occurrence = building_key not in source_building_keys
         source_building_keys.add(building_key)
@@ -491,24 +498,23 @@ def import_workbook(
             street,
             house_number,
             postal_code,
+            energy_label,
+            source_valid_to,
         )
         if building_key in buildings:
             duplicate_buildings += 1
         else:
             buildings[building_key] = building
 
-        energy_label = row.get(_find_column(row, "EM-nr"), "").strip()
-        valid_to_raw = row.get(_find_column(row, "Gyldig til"), "").strip()
-        if not energy_label or not valid_to_raw:
+        if not energy_label or source_valid_to is None:
             continue
 
-        valid_to = _excel_date(valid_to_raw)
         entry = labels.setdefault(
             energy_label,
-            {"validTo": valid_to, "owners": defaultdict(dict)},
+            {"validTo": source_valid_to, "owners": defaultdict(dict)},
         )
-        if entry["validTo"] != valid_to:
-            entry["validTo"] = max(entry["validTo"], valid_to)
+        if entry["validTo"] != source_valid_to:
+            entry["validTo"] = max(entry["validTo"], source_valid_to)
         owner_buildings = entry["owners"][cvr]
         owner_buildings[building_key] = building
         if len(entry["owners"]) > 1:
@@ -523,7 +529,7 @@ def import_workbook(
     }
 
     inventory = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "generatedAt": datetime.now(UTC).isoformat(),
         "source": workbook.name,
         "quality": {
@@ -753,6 +759,12 @@ def update_from_emodata(
             street=compact[5],
             house_number=compact[6],
             postal_code=compact[7],
+            source_energy_label=str(compact[8]) if len(compact) > 8 else "",
+            source_valid_to=(
+                date.fromisoformat(compact[9])
+                if len(compact) > 9 and compact[9]
+                else None
+            ),
         )
         key = (building.cvr, "|".join(building.bfes), building.building_number)
         buildings[key] = building
@@ -762,7 +774,13 @@ def update_from_emodata(
     latest_by_building: dict[
         tuple[str, str, str],
         tuple[str, date, Building],
-    ] = {}
+    ] = {
+        key: (building.source_energy_label, building.source_valid_to, building)
+        for key, building in buildings.items()
+        if building.source_energy_label and building.source_valid_to
+    }
+    source_label_building_keys = set(latest_by_building)
+    emodata_matched_building_keys: set[tuple[str, str, str]] = set()
     unmatched = 0
     malformed = 0
     returned = 0
@@ -814,6 +832,7 @@ def update_from_emodata(
 
             matched_candidates += 1
             for key, building in candidates:
+                emodata_matched_building_keys.add(key)
                 current = latest_by_building.get(key)
                 if current is None or valid_to > current[1]:
                     latest_by_building[key] = (serial, valid_to, building)
@@ -843,6 +862,9 @@ def update_from_emodata(
             ),
             "geographicEnergyLabelsReturned": returned,
             "matchedEnergyLabelCandidates": matched_candidates,
+            "sourceLabelFallbackBuildings": len(
+                source_label_building_keys - emodata_matched_building_keys
+            ),
             "unmatchedGeographicEnergyLabels": unmatched,
             "malformedEnergyLabels": malformed,
         },

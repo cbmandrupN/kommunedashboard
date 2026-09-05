@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import json
 import sys
 import tempfile
@@ -7,10 +8,12 @@ import unittest
 import zipfile
 from datetime import date
 from pathlib import Path
+from unittest import mock
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
+import pipeline
 from pipeline import (
     Building,
     _bucket,
@@ -18,6 +21,7 @@ from pipeline import (
     _parse_emodata_date,
     _split_values,
     aggregate_labels,
+    update_from_emodata,
     write_building_data,
     write_building_exports,
 )
@@ -33,6 +37,21 @@ class PipelineTests(unittest.TestCase):
 
     def test_split_values_normalizes_multiple_bfes(self) -> None:
         self.assertEqual(_split_values("701124, 6000014;701124"), ("701124", "6000014"))
+
+    def test_inventory_compact_preserves_source_energy_label(self) -> None:
+        building = Building(
+            "1",
+            "101",
+            ("10",),
+            "2",
+            300,
+            "Testvej",
+            "12A",
+            "1234",
+            "EM123",
+            date(2030, 1, 2),
+        )
+        self.assertEqual(building.compact()[8:], ["EM123", "2030-01-02"])
 
     def test_emodata_date_formats(self) -> None:
         self.assertEqual(_parse_emodata_date("04-01-2017"), date(2017, 1, 4))
@@ -153,6 +172,51 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(result["totalsMissingLabel"]["buildings"], 0)
         self.assertEqual(municipality["eligibleBuildings"], 1)
         self.assertEqual(municipality["validLabelBuildings"], 1)
+
+    def test_emodata_update_uses_source_label_when_no_match_is_returned(self) -> None:
+        source_labelled = Building(
+            "1",
+            "101",
+            ("10",),
+            "1",
+            100,
+            source_energy_label="EM-SOURCE",
+            source_valid_to=date(2030, 1, 1),
+        )
+        unlabelled = Building("1", "101", ("20",), "2", 200)
+        inventory = {
+            "quality": {},
+            "municipalities": [
+                {"cvr": "1", "name": "Test Kommune", "municipalityCode": "101"}
+            ],
+            "buildings": [source_labelled.compact(), unlabelled.compact()],
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            inventory_path = root / "inventory.json.gz"
+            with gzip.open(inventory_path, "wt", encoding="utf-8") as output:
+                json.dump(inventory, output)
+            with (
+                mock.patch.dict(
+                    "os.environ",
+                    {"EMODATA_USERNAME": "user", "EMODATA_PASSWORD": "password"},
+                ),
+                mock.patch.object(
+                    pipeline,
+                    "_request_json",
+                    return_value={"EnergyLabels": []},
+                ),
+                mock.patch.object(pipeline, "write_dashboard"),
+            ):
+                result = update_from_emodata(
+                    inventory_path=inventory_path,
+                    dashboard_path=root / "dashboard.json",
+                    as_of=date(2026, 9, 5),
+                )
+        municipality = result["municipalities"][0]
+        self.assertEqual(municipality["validLabelBuildings"], 1)
+        self.assertEqual(municipality["unlabelled"]["buildings"], 1)
+        self.assertEqual(result["quality"]["sourceLabelFallbackBuildings"], 1)
 
     def test_building_export_is_valid_xlsx(self) -> None:
         building = Building(

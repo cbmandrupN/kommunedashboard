@@ -215,6 +215,7 @@ export default function App() {
     if (!selectedCvr) {
       setBuildingRows([])
       setBuildingError(null)
+      setBuildingLoading(false)
       return
     }
 

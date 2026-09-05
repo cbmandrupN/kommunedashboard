@@ -349,7 +349,9 @@ def _building_records_by_cvr(
                 "address": " ".join(
                     part for part in (building.street, building.house_number) if part
                 ),
-                "postalCode": building.postal_code,
+                "postalCode": (
+                    "" if building.postal_code == "0" else building.postal_code
+                ),
                 "bfe": ", ".join(building.bfes),
                 "buildingNumber": building.building_number,
                 "area": building.area,

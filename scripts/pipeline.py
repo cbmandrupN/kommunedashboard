@@ -58,6 +58,9 @@ class Building:
     bfes: tuple[str, ...]
     building_number: str
     area: int
+    street: str = ""
+    house_number: str = ""
+    postal_code: str = ""
 
     def compact(self) -> list[Any]:
         return [
@@ -66,6 +69,9 @@ class Building:
             list(self.bfes),
             self.building_number,
             self.area,
+            self.street,
+            self.house_number,
+            self.postal_code,
         ]
 
 
@@ -296,6 +302,10 @@ def write_building_exports(
                     municipality_name,
                     cvr,
                     building.municipality_code,
+                    " ".join(
+                        part for part in (building.street, building.house_number) if part
+                    ),
+                    building.postal_code,
                     ", ".join(building.bfes),
                     building.building_number,
                     building.area,
@@ -305,7 +315,9 @@ def write_building_exports(
                     "Ja" if valid_to is None or valid_to < as_of else "Nej",
                 ]
             )
-        data_rows.sort(key=lambda row: (row[9] != "Ja", row[7] or "0000", row[3], row[4]))
+        data_rows.sort(
+            key=lambda row: (row[11] != "Ja", row[9] or "0000", row[5], row[6])
+        )
         _write_xlsx(
             export_dir / f"{cvr}.xlsx",
             [
@@ -313,6 +325,8 @@ def write_building_exports(
                     "Kommune",
                     "CVR",
                     "Geografisk kommunekode",
+                    "Adresse",
+                    "Postnr.",
                     "BFE-nummer",
                     "Bygningsnummer",
                     "Areal (m²)",
@@ -387,6 +401,9 @@ def import_workbook(
         area = _integer(row.get(_find_column(row, "Boligareal"))) + _integer(
             row.get(_find_column(row, "Erhvervsareal"))
         )
+        street = row.get(_find_column(row, "Vejnavn"), "").strip()
+        house_number = row.get(_find_column(row, "Husnr."), "").strip()
+        postal_code = row.get(_find_column(row, "Postnr."), "").strip()
         building_key = (cvr, sfe or "|".join(bfe_values), building_number)
         first_source_occurrence = building_key not in source_building_keys
         source_building_keys.add(building_key)
@@ -408,7 +425,16 @@ def import_workbook(
             continue
 
         included_rows += 1
-        building = Building(cvr, municipality_code, bfe_values, building_number, area)
+        building = Building(
+            cvr,
+            municipality_code,
+            bfe_values,
+            building_number,
+            area,
+            street,
+            house_number,
+            postal_code,
+        )
         if building_key in buildings:
             duplicate_buildings += 1
         else:
@@ -440,7 +466,7 @@ def import_workbook(
     }
 
     inventory = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "generatedAt": datetime.now(UTC).isoformat(),
         "source": workbook.name,
         "quality": {
@@ -658,6 +684,9 @@ def update_from_emodata(
             bfes=tuple(compact[2]),
             building_number=compact[3],
             area=int(compact[4]),
+            street=compact[5],
+            house_number=compact[6],
+            postal_code=compact[7],
         )
         key = (building.cvr, "|".join(building.bfes), building.building_number)
         buildings[key] = building

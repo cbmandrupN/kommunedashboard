@@ -92,6 +92,7 @@ type DashboardData = {
     outsidePublicAreaThresholdBuildings: number
     noHeatingInstallationBuildings: number
     protectedBuildings: number
+    sourceLabelFallbackBuildings?: number
     unmatchedEnergyLabels?: number
     unmatchedGeographicEnergyLabels?: number
   }
@@ -481,6 +482,9 @@ export default function App() {
           <a className="font-medium text-blue-700 underline" href="https://www.hbemo.dk/vejledning/faq/bekendtgoerelse-om-energimaerkning-af-bygninger" target="_blank" rel="noreferrer">HBEMO</a>
           {' '}og den gældende{' '}
           <a className="font-medium text-blue-700 underline" href="https://www.retsinformation.dk/eli/lta/2023/549" target="_blank" rel="noreferrer">bekendtgørelse</a>.
+          {dashboard.quality.sourceLabelFallbackBuildings
+            ? ` For ${numberFormat.format(dashboard.quality.sourceLabelFallbackBuildings)} bygninger uden EMOData-match anvendes mærket fra det oprindelige kommunale udtræk.`
+            : ''}
           Forhold som nedrivningshensigt, opvarmet delareal og mangler i klimaskærmen kræver manuel kontrol.
         </Card>
 

@@ -60,5 +60,7 @@ matcher dem mod inventaret, opdaterer de kommunevise Excel-udtræk og genudgiver
 dashboardet. Excel-filerne indeholder adresse, postnummer, BFE, bygningsnummer,
 areal, EM-nummer, udløbsdato og status. De samme bygningsoplysninger genereres
 som kommunevise JSON-filer til den søgbare bygningsliste i dashboardet.
+Hvis en bygning ikke kan matches i EMOData, bruges energimærket fra det
+oprindelige kommunale udtræk som fallback.
 Repositoryet skal have de
 krypterede secrets `EMODATA_USERNAME` og `EMODATA_PASSWORD`.

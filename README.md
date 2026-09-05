@@ -51,11 +51,14 @@ python scripts\pipeline.py --as-of 2026-09-04 import-workbook `
   --municipalities data\municipalities.json `
   --inventory data\municipality-inventory.json.gz `
   --dashboard src\data\dashboard-data.json `
-  --exports public\exports
+  --exports public\exports `
+  --building-data public\buildings
 ```
 
 Den manuelle GitHub Action **Update EMOData** henter derefter seneste energimærker,
 matcher dem mod inventaret, opdaterer de kommunevise Excel-udtræk og genudgiver
 dashboardet. Excel-filerne indeholder adresse, postnummer, BFE, bygningsnummer,
-areal, EM-nummer, udløbsdato og status. Repositoryet skal have de
+areal, EM-nummer, udløbsdato og status. De samme bygningsoplysninger genereres
+som kommunevise JSON-filer til den søgbare bygningsliste i dashboardet.
+Repositoryet skal have de
 krypterede secrets `EMODATA_USERNAME` og `EMODATA_PASSWORD`.

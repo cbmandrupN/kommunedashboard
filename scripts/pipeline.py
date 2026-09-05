@@ -271,53 +271,30 @@ def write_building_exports(
     labels: dict[str, dict[str, Any]],
     as_of: date,
 ) -> None:
-    latest_by_building: dict[tuple[str, str, str], tuple[str, date]] = {}
-    for serial, entry in labels.items():
-        valid_to = entry["validTo"]
-        for owner_buildings in entry["owners"].values():
-            for key in owner_buildings:
-                current = latest_by_building.get(key)
-                if current is None or valid_to > current[1]:
-                    latest_by_building[key] = (serial, valid_to)
-
-    buildings_by_cvr: dict[str, list[tuple[tuple[str, str, str], Building]]] = defaultdict(list)
-    for key, building in buildings.items():
-        buildings_by_cvr[building.cvr].append((key, building))
-
+    records_by_cvr = _building_records_by_cvr(buildings, labels, as_of)
     export_dir.mkdir(parents=True, exist_ok=True)
     for cvr, municipality_name in municipalities.items():
-        data_rows: list[list[str | int]] = []
-        for key, building in buildings_by_cvr.get(cvr, []):
-            label = latest_by_building.get(key)
-            serial = label[0] if label else ""
-            valid_to = label[1] if label else None
-            if valid_to is None:
-                status = "Mangler energimærke"
-            elif valid_to < as_of:
-                status = "Udløbet"
-            else:
-                status = "Gyldigt"
-            data_rows.append(
-                [
-                    municipality_name,
-                    cvr,
-                    building.municipality_code,
-                    " ".join(
-                        part for part in (building.street, building.house_number) if part
-                    ),
-                    building.postal_code,
-                    ", ".join(building.bfes),
-                    building.building_number,
-                    building.area,
-                    serial,
-                    valid_to.isoformat() if valid_to else "",
-                    status,
-                    "Ja" if valid_to is None or valid_to < as_of else "Nej",
-                ]
-            )
-        data_rows.sort(
-            key=lambda row: (row[11] != "Ja", row[9] or "0000", row[5], row[6])
-        )
+        data_rows = [
+            [
+                municipality_name,
+                cvr,
+                record["municipalityCode"],
+                record["address"],
+                record["postalCode"],
+                record["bfe"],
+                record["buildingNumber"],
+                record["area"],
+                record["energyLabel"],
+                record["validTo"],
+                {
+                    "unlabelled": "Mangler energimærke",
+                    "expired": "Udløbet",
+                    "valid": "Gyldigt",
+                }[record["status"]],
+                "Nej" if record["status"] == "valid" else "Ja",
+            ]
+            for record in records_by_cvr.get(cvr, [])
+        ]
         _write_xlsx(
             export_dir / f"{cvr}.xlsx",
             [
@@ -337,6 +314,83 @@ def write_building_exports(
                 ],
                 *data_rows,
             ],
+        )
+
+
+def _building_records_by_cvr(
+    buildings: dict[tuple[str, str, str], Building],
+    labels: dict[str, dict[str, Any]],
+    as_of: date,
+) -> dict[str, list[dict[str, str | int]]]:
+    latest_by_building: dict[tuple[str, str, str], tuple[str, date]] = {}
+    for serial, entry in labels.items():
+        valid_to = entry["validTo"]
+        for owner_buildings in entry["owners"].values():
+            for key in owner_buildings:
+                current = latest_by_building.get(key)
+                if current is None or valid_to > current[1]:
+                    latest_by_building[key] = (serial, valid_to)
+
+    records_by_cvr: dict[str, list[dict[str, str | int]]] = defaultdict(list)
+    for key, building in buildings.items():
+        label = latest_by_building.get(key)
+        serial = label[0] if label else ""
+        valid_to = label[1] if label else None
+        status = (
+            "unlabelled"
+            if valid_to is None
+            else "expired"
+            if valid_to < as_of
+            else "valid"
+        )
+        records_by_cvr[building.cvr].append(
+            {
+                "municipalityCode": building.municipality_code,
+                "address": " ".join(
+                    part for part in (building.street, building.house_number) if part
+                ),
+                "postalCode": building.postal_code,
+                "bfe": ", ".join(building.bfes),
+                "buildingNumber": building.building_number,
+                "area": building.area,
+                "energyLabel": serial,
+                "validTo": valid_to.isoformat() if valid_to else "",
+                "status": status,
+            }
+        )
+    status_order = {"unlabelled": 0, "expired": 1, "valid": 2}
+    for records in records_by_cvr.values():
+        records.sort(
+            key=lambda record: (
+                status_order[str(record["status"])],
+                str(record["validTo"]) or "0000",
+                str(record["address"]),
+                str(record["bfe"]),
+                str(record["buildingNumber"]),
+            )
+        )
+    return records_by_cvr
+
+
+def write_building_data(
+    data_dir: Path,
+    municipalities: dict[str, str],
+    buildings: dict[tuple[str, str, str], Building],
+    labels: dict[str, dict[str, Any]],
+    as_of: date,
+) -> None:
+    records_by_cvr = _building_records_by_cvr(buildings, labels, as_of)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    for cvr, municipality_name in municipalities.items():
+        payload = {
+            "schemaVersion": 1,
+            "asOf": as_of.isoformat(),
+            "municipality": {"name": municipality_name, "cvr": cvr},
+            "buildings": records_by_cvr.get(cvr, []),
+        }
+        (data_dir / f"{cvr}.json").write_text(
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
         )
 
 
@@ -372,6 +426,7 @@ def import_workbook(
     dashboard_path: Path,
     as_of: date,
     export_dir: Path | None = None,
+    building_data_dir: Path | None = None,
 ) -> dict[str, Any]:
     municipalities = load_municipalities(municipalities_path)
     municipality_code_counts: dict[str, dict[str, int]] = defaultdict(
@@ -525,6 +580,14 @@ def import_workbook(
     )
     if export_dir:
         write_building_exports(export_dir, municipalities, buildings, labels, as_of)
+    if building_data_dir:
+        write_building_data(
+            building_data_dir,
+            municipalities,
+            buildings,
+            labels,
+            as_of,
+        )
     write_dashboard(dashboard_path, dashboard)
     return dashboard
 
@@ -659,6 +722,7 @@ def update_from_emodata(
     dashboard_path: Path,
     as_of: date,
     export_dir: Path | None = None,
+    building_data_dir: Path | None = None,
 ) -> dict[str, Any]:
     username = os.environ.get("EMODATA_USERNAME")
     password = os.environ.get("EMODATA_PASSWORD")
@@ -783,6 +847,14 @@ def update_from_emodata(
     )
     if export_dir:
         write_building_exports(export_dir, municipalities, buildings, labels, as_of)
+    if building_data_dir:
+        write_building_data(
+            building_data_dir,
+            municipalities,
+            buildings,
+            labels,
+            as_of,
+        )
     write_dashboard(dashboard_path, dashboard)
     return dashboard
 
@@ -798,11 +870,13 @@ def _parse_args() -> argparse.Namespace:
     workbook.add_argument("--inventory", type=Path, required=True)
     workbook.add_argument("--dashboard", type=Path, required=True)
     workbook.add_argument("--exports", type=Path)
+    workbook.add_argument("--building-data", type=Path)
 
     emodata = subparsers.add_parser("update-emodata")
     emodata.add_argument("--inventory", type=Path, required=True)
     emodata.add_argument("--dashboard", type=Path, required=True)
     emodata.add_argument("--exports", type=Path)
+    emodata.add_argument("--building-data", type=Path)
     return parser.parse_args()
 
 
@@ -816,6 +890,7 @@ def main() -> int:
             args.dashboard,
             args.as_of,
             args.exports,
+            args.building_data,
         )
     else:
         dashboard = update_from_emodata(
@@ -823,6 +898,7 @@ def main() -> int:
             args.dashboard,
             args.as_of,
             args.exports,
+            args.building_data,
         )
     print(
         json.dumps(

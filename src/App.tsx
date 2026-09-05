@@ -485,7 +485,7 @@ export default function App() {
           {dashboard.quality.sourceLabelFallbackBuildings
             ? ` For ${numberFormat.format(dashboard.quality.sourceLabelFallbackBuildings)} bygninger uden EMOData-match anvendes mærket fra det oprindelige kommunale udtræk.`
             : ''}
-          Forhold som nedrivningshensigt, opvarmet delareal og mangler i klimaskærmen kræver manuel kontrol.
+          {' '}Forhold som nedrivningshensigt, opvarmet delareal og mangler i klimaskærmen kræver manuel kontrol.
         </Card>
 
         <Card className="p-5">

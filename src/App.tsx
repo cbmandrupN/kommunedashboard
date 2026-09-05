@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Bar,
   BarChart,
@@ -18,7 +18,7 @@ import {
   MapPin,
   Search,
 } from 'lucide-react'
-import { Button, Card, Input, Select, cn } from './components/ui'
+import { Badge, Button, Card, Input, Select, cn } from './components/ui'
 import dashboardJson from './data/dashboard-data.json'
 
 const YEARS = [
@@ -33,6 +33,27 @@ type Bucket = 'expired' | Year
 type Metric = Record<Bucket, number>
 type SortKey = 'name' | 'selected' | 'share' | 'valid' | 'expired' | 'unlabelled'
 type TableMode = 'year' | 'expired' | 'unlabelled'
+type BuildingStatus = 'valid' | 'expired' | 'unlabelled'
+type BuildingFilter = 'all' | BuildingStatus | Year
+
+type BuildingRecord = {
+  municipalityCode: string
+  address: string
+  postalCode: string
+  bfe: string
+  buildingNumber: string
+  area: number
+  energyLabel: string
+  validTo: string
+  status: BuildingStatus
+}
+
+type MunicipalityBuildingData = {
+  schemaVersion: number
+  asOf: string
+  municipality: { name: string; cvr: string }
+  buildings: BuildingRecord[]
+}
 
 type Municipality = {
   name: string
@@ -82,6 +103,8 @@ const numberFormat = new Intl.NumberFormat('da-DK', { maximumFractionDigits: 0 }
 const compactFormat = new Intl.NumberFormat('da-DK', { notation: 'compact', maximumFractionDigits: 1 })
 const percentageFormat = new Intl.NumberFormat('da-DK', { style: 'percent', maximumFractionDigits: 1 })
 const dateFormat = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'long', year: 'numeric' })
+const shortDateFormat = new Intl.DateTimeFormat('da-DK')
+const BUILDING_PAGE_SIZE = 100
 
 const horizonLabels: Record<Horizon, string> = {
   '2026': 'Udløber i 2026',
@@ -135,6 +158,18 @@ function formatBuildings(value: number) {
   return `${numberFormat.format(value)} bygninger`
 }
 
+function formatExpiryDate(value: string) {
+  return value ? shortDateFormat.format(new Date(`${value}T12:00:00`)) : '—'
+}
+
+function buildingMatchesFilter(building: BuildingRecord, filter: BuildingFilter) {
+  if (filter === 'all') return true
+  if (filter === 'valid' || filter === 'expired' || filter === 'unlabelled') {
+    return building.status === filter
+  }
+  return building.status === 'valid' && building.validTo.startsWith(filter)
+}
+
 function downloadMunicipalityExport(municipality: Municipality) {
   const anchor = document.createElement('a')
   anchor.href = `${import.meta.env.BASE_URL}exports/${municipality.cvr}.xlsx`
@@ -166,25 +201,75 @@ export default function App() {
   const [sortDescending, setSortDescending] = useState(true)
   const [selectedCvr, setSelectedCvr] = useState<string | null>(null)
   const [tableMode, setTableMode] = useState<TableMode>('year')
+  const [buildingRows, setBuildingRows] = useState<BuildingRecord[]>([])
+  const [buildingQuery, setBuildingQuery] = useState('')
+  const [buildingFilter, setBuildingFilter] = useState<BuildingFilter>('2026')
+  const [visibleBuildingCount, setVisibleBuildingCount] = useState(BUILDING_PAGE_SIZE)
+  const [buildingLoading, setBuildingLoading] = useState(false)
+  const [buildingError, setBuildingError] = useState<string | null>(null)
   const totals = dashboard.totals.buildings
   const selectedMunicipality = municipalities.find((row) => row.cvr === selectedCvr)
   const chartMetrics = selectedMunicipality?.metrics.buildings ?? totals
 
+  useEffect(() => {
+    if (!selectedCvr) {
+      setBuildingRows([])
+      setBuildingError(null)
+      setBuildingLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    setBuildingRows([])
+    setBuildingQuery('')
+    setBuildingLoading(true)
+    setBuildingError(null)
+    fetch(`${import.meta.env.BASE_URL}buildings/${selectedCvr}.json`, {
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Bygningsdata kunne ikke hentes (${response.status})`)
+        }
+        return response.json() as Promise<MunicipalityBuildingData>
+      })
+      .then((payload) => setBuildingRows(payload.buildings))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        setBuildingRows([])
+        setBuildingError(
+          error instanceof Error ? error.message : 'Bygningsdata kunne ikke hentes',
+        )
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setBuildingLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [selectedCvr])
+
+  useEffect(() => {
+    setVisibleBuildingCount(BUILDING_PAGE_SIZE)
+  }, [buildingFilter, buildingQuery, selectedCvr])
+
   const selectHorizon = (value: Horizon) => {
     setHorizon(value)
     setTableMode('year')
+    setBuildingFilter(value)
     setSortKey('selected')
     setSortDescending(true)
   }
 
   const selectExpiredLabels = () => {
     setTableMode('expired')
+    setBuildingFilter('expired')
     setSortKey('expired')
     setSortDescending(true)
   }
 
   const selectUnlabelled = () => {
     setTableMode('unlabelled')
+    setBuildingFilter('unlabelled')
     setSortKey('unlabelled')
     setSortDescending(true)
   }
@@ -214,6 +299,21 @@ export default function App() {
         return sortDescending ? -result : result
       })
   }, [horizon, query, sortDescending, sortKey, tableMode])
+
+  const filteredBuildingRows = useMemo(() => {
+    const normalizedQuery = buildingQuery.trim().toLocaleLowerCase('da-DK')
+    return buildingRows.filter((building) => {
+      if (!buildingMatchesFilter(building, buildingFilter)) return false
+      if (!normalizedQuery) return true
+      return [
+        building.address,
+        building.postalCode,
+        building.bfe,
+        building.buildingNumber,
+        building.energyLabel,
+      ].some((value) => value.toLocaleLowerCase('da-DK').includes(normalizedQuery))
+    })
+  }, [buildingFilter, buildingQuery, buildingRows])
 
   const totalUnlabelledBuildings = municipalities.reduce(
     (sum, row) => sum + unlabelledFor(row),
@@ -451,6 +551,113 @@ export default function App() {
           </ResponsiveContainer>
         </Card>
 
+        {selectedMunicipality && (
+          <Card className="overflow-hidden">
+            <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center">
+              <div className="mr-auto">
+                <h2 className="text-[15px] font-semibold text-slate-900">
+                  {selectedMunicipality.name}: bygningsliste
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {buildingLoading
+                    ? 'Henter bygninger…'
+                    : `${numberFormat.format(filteredBuildingRows.length)} af ${numberFormat.format(buildingRows.length)} bygninger`}
+                </p>
+              </div>
+              <div className="relative w-full lg:w-80">
+                <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={15} />
+                <Input
+                  value={buildingQuery}
+                  onChange={(event) => setBuildingQuery(event.target.value)}
+                  placeholder="Søg adresse, BFE eller EM-nummer"
+                  className="w-full pl-9"
+                />
+              </div>
+              <Select
+                value={buildingFilter}
+                onChange={(event) => setBuildingFilter(event.target.value as BuildingFilter)}
+              >
+                <option value="all">Alle bygninger</option>
+                <option value="unlabelled">Mangler mærke</option>
+                <option value="expired">Udløbet mærke</option>
+                <option value="valid">Alle gyldige mærker</option>
+                {YEARS.map((year) => (
+                  <option key={year} value={year}>Udløber i {year}</option>
+                ))}
+              </Select>
+            </div>
+
+            {buildingError && (
+              <div className="border-b border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+                {buildingError}. Excel-udtrækket kan stadig hentes ovenfor.
+              </div>
+            )}
+
+            {!buildingError && (
+              <>
+                <div className="max-h-[620px] overflow-auto">
+                  <table className="min-w-[1050px]">
+                    <thead>
+                      <tr>
+                        <th>Adresse</th>
+                        <th>Status</th>
+                        <th>Gyldig til</th>
+                        <th>EM-nummer</th>
+                        <th>BFE-nummer</th>
+                        <th className="num">Bygning</th>
+                        <th className="num">Areal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredBuildingRows
+                        .slice(0, visibleBuildingCount)
+                        .map((building, index) => (
+                          <tr key={`${building.bfe}-${building.buildingNumber}-${index}`}>
+                            <td>
+                              <div className="font-medium text-slate-900">
+                                {building.address || 'Adresse ikke oplyst'}
+                              </div>
+                              <div className="text-[11px] text-slate-400">
+                                {building.postalCode || 'Postnr. ikke oplyst'}
+                              </div>
+                            </td>
+                            <td><BuildingStatusBadge status={building.status} /></td>
+                            <td className="whitespace-nowrap text-slate-600">
+                              {formatExpiryDate(building.validTo)}
+                            </td>
+                            <td className="text-slate-600">{building.energyLabel || '—'}</td>
+                            <td className="text-slate-600">{building.bfe || '—'}</td>
+                            <td className="num text-slate-600">{building.buildingNumber || '—'}</td>
+                            <td className="num text-slate-600">{numberFormat.format(building.area)} m²</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+                {!buildingLoading && filteredBuildingRows.length === 0 && (
+                  <div className="px-5 py-12 text-center text-sm text-slate-500">
+                    Ingen bygninger matcher søgningen og det valgte filter.
+                  </div>
+                )}
+                {visibleBuildingCount < filteredBuildingRows.length && (
+                  <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3">
+                    <span className="text-xs text-slate-500">
+                      Viser {numberFormat.format(visibleBuildingCount)} af {numberFormat.format(filteredBuildingRows.length)}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setVisibleBuildingCount((count) => count + BUILDING_PAGE_SIZE)}
+                    >
+                      Vis flere
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </Card>
+        )}
+
         <Card className="overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center">
             <div className="mr-auto">
@@ -534,6 +741,12 @@ export default function App() {
       </footer>
     </div>
   )
+}
+
+function BuildingStatusBadge({ status }: { status: BuildingStatus }) {
+  if (status === 'unlabelled') return <Badge color="red">Mangler mærke</Badge>
+  if (status === 'expired') return <Badge color="amber">Udløbet</Badge>
+  return <Badge color="green">Gyldigt</Badge>
 }
 
 function DeadlineCard({

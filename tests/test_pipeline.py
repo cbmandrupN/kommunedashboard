@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -17,6 +18,7 @@ from pipeline import (
     _parse_emodata_date,
     _split_values,
     aggregate_labels,
+    write_building_data,
     write_building_exports,
 )
 
@@ -187,6 +189,40 @@ class PipelineTests(unittest.TestCase):
                 worksheet.index("<dimension"),
                 worksheet.index("<sheetViews>"),
             )
+
+    def test_building_data_contains_browser_fields_and_statuses(self) -> None:
+        as_of = date(2026, 9, 4)
+        expired = Building(
+            "1", "101", ("10",), "1", 200, "Gammel Vej", "1", "1234"
+        )
+        unlabelled = Building(
+            "1", "101", ("20",), "2", 300, "Ny Vej", "2A", "1234"
+        )
+        labels = {
+            "EM1": {
+                "validTo": date(2026, 9, 3),
+                "owners": {"1": {("1", "10", "1"): expired}},
+            }
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            data_dir = Path(temporary_directory)
+            write_building_data(
+                data_dir=data_dir,
+                municipalities={"1": "Test Kommune"},
+                buildings={
+                    ("1", "10", "1"): expired,
+                    ("1", "20", "2"): unlabelled,
+                },
+                labels=labels,
+                as_of=as_of,
+            )
+            payload = json.loads((data_dir / "1.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload["municipality"]["name"], "Test Kommune")
+        self.assertEqual(len(payload["buildings"]), 2)
+        self.assertEqual(payload["buildings"][0]["status"], "unlabelled")
+        self.assertEqual(payload["buildings"][0]["address"], "Ny Vej 2A")
+        self.assertEqual(payload["buildings"][1]["status"], "expired")
+        self.assertEqual(payload["buildings"][1]["energyLabel"], "EM1")
 
 
 if __name__ == "__main__":

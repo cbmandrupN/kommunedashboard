@@ -26,7 +26,8 @@ jobs:
           python scripts/pipeline.py update-emodata \
             --inventory data/municipality-inventory.json.gz \
             --dashboard src/data/dashboard-data.json \
-            --exports public/exports | tee update-summary.json
+            --exports public/exports \
+            --building-data public/buildings | tee update-summary.json
       - name: Test generated data
         run: python -m unittest discover -s tests -v
       - name: Write job summary
@@ -37,12 +38,12 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
       - name: Commit updated data
         run: |
-          if git diff --quiet -- src/data/dashboard-data.json public/exports; then
+          if git diff --quiet -- src/data/dashboard-data.json public/exports public/buildings; then
             echo "Data er uændret."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/data/dashboard-data.json public/exports
+          git add src/data/dashboard-data.json public/exports public/buildings
           git commit -m "Update EMOData dashboard data"
           git push

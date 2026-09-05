@@ -153,7 +153,16 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(municipality["validLabelBuildings"], 1)
 
     def test_building_export_is_valid_xlsx(self) -> None:
-        building = Building("1", "101", ("10",), "2", 300)
+        building = Building(
+            "1",
+            "101",
+            ("10",),
+            "2",
+            300,
+            "Testvej",
+            "12A",
+            "1234",
+        )
         with tempfile.TemporaryDirectory() as temporary_directory:
             export_dir = Path(temporary_directory)
             write_building_exports(
@@ -170,6 +179,10 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("Test Kommune", worksheet)
             self.assertIn("Mangler energimærke", worksheet)
             self.assertIn("BFE-nummer", worksheet)
+            self.assertIn("Adresse", worksheet)
+            self.assertIn("Testvej 12A", worksheet)
+            self.assertIn("Postnr.", worksheet)
+            self.assertIn("1234", worksheet)
             self.assertLess(
                 worksheet.index("<dimension"),
                 worksheet.index("<sheetViews>"),

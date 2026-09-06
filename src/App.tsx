@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   CircleAlert,
   Download,
+  ExternalLink,
   MapPin,
   Search,
 } from 'lucide-react'
@@ -45,6 +46,7 @@ type BuildingRecord = {
   area: number
   energyLabel: string
   validTo: string
+  reportUrl: string
   status: BuildingStatus
 }
 
@@ -607,6 +609,7 @@ export default function App() {
                         <th>Status</th>
                         <th>Gyldig til</th>
                         <th>EM-nummer</th>
+                        <th>Rapport</th>
                         <th>BFE-nummer</th>
                         <th className="num">Bygning</th>
                         <th className="num">Areal</th>
@@ -630,6 +633,19 @@ export default function App() {
                               {formatExpiryDate(building.validTo)}
                             </td>
                             <td className="text-slate-600">{building.energyLabel || '—'}</td>
+                            <td>
+                              {building.reportUrl ? (
+                                <a
+                                  href={building.reportUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 whitespace-nowrap font-medium text-blue-700 hover:underline"
+                                >
+                                  Åbn rapport
+                                  <ExternalLink size={13} aria-hidden="true" />
+                                </a>
+                              ) : '—'}
+                            </td>
                             <td className="text-slate-600">{building.bfe || '—'}</td>
                             <td className="num text-slate-600">{building.buildingNumber || '—'}</td>
                             <td className="num text-slate-600">{numberFormat.format(building.area)} m²</td>

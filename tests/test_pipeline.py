@@ -218,6 +218,60 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(municipality["unlabelled"]["buildings"], 1)
         self.assertEqual(result["quality"]["sourceLabelFallbackBuildings"], 1)
 
+    def test_emodata_report_link_is_added_to_building_data(self) -> None:
+        building = Building("1", "101", ("10",), "1", 300)
+        inventory = {
+            "quality": {},
+            "municipalities": [
+                {"cvr": "1", "name": "Test Kommune", "municipalityCode": "101"}
+            ],
+            "buildings": [building.compact()],
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            inventory_path = root / "inventory.json.gz"
+            building_data_dir = root / "buildings"
+            with gzip.open(inventory_path, "wt", encoding="utf-8") as output:
+                json.dump(inventory, output)
+            with (
+                mock.patch.dict(
+                    "os.environ",
+                    {"EMODATA_USERNAME": "user", "EMODATA_PASSWORD": "password"},
+                ),
+                mock.patch.object(
+                    pipeline,
+                    "_request_json",
+                    return_value={
+                        "EnergyLabels": [
+                            {
+                                "EnergyLabelSerialIdentifier": "311199190",
+                                "BFENumber": "10",
+                                "BuildingNumbers": "1",
+                                "ValidTo": "2030-01-01",
+                                "DEMOLink": (
+                                    "http://tjekenergimaerke.emoweb.dk/"
+                                    "Report/311199190"
+                                ),
+                            }
+                        ]
+                    },
+                ),
+                mock.patch.object(pipeline, "write_dashboard"),
+            ):
+                update_from_emodata(
+                    inventory_path=inventory_path,
+                    dashboard_path=root / "dashboard.json",
+                    building_data_dir=building_data_dir,
+                    as_of=date(2026, 9, 5),
+                )
+            payload = json.loads(
+                (building_data_dir / "1.json").read_text(encoding="utf-8")
+            )
+        self.assertEqual(
+            payload["buildings"][0]["reportUrl"],
+            "https://tjekenergimaerke.emoweb.dk/Report/311199190",
+        )
+
     def test_building_export_is_valid_xlsx(self) -> None:
         building = Building(
             "1",
@@ -265,6 +319,7 @@ class PipelineTests(unittest.TestCase):
         labels = {
             "EM1": {
                 "validTo": date(2026, 9, 3),
+                "reportUrl": "https://tjekenergimaerke.emoweb.dk/report/EM1",
                 "owners": {"1": {("1", "10", "1"): expired}},
             }
         }
@@ -287,6 +342,10 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(payload["buildings"][0]["address"], "Ny Vej 2A")
         self.assertEqual(payload["buildings"][1]["status"], "expired")
         self.assertEqual(payload["buildings"][1]["energyLabel"], "EM1")
+        self.assertEqual(
+            payload["buildings"][1]["reportUrl"],
+            "https://tjekenergimaerke.emoweb.dk/report/EM1",
+        )
 
 
 if __name__ == "__main__":

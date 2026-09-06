@@ -55,7 +55,8 @@ python scripts\pipeline.py --as-of 2026-09-04 import-workbook `
   --building-data public\buildings
 ```
 
-Den manuelle GitHub Action **Update EMOData** henter derefter seneste energimærker,
+GitHub Action **Update EMOData** kører automatisk den første dag i hver måned
+kl. 03.17 UTC og kan også startes manuelt. Den henter seneste energimærker,
 matcher dem mod inventaret, opdaterer de kommunevise Excel-udtræk og genudgiver
 dashboardet. Excel-filerne indeholder adresse, postnummer, BFE, bygningsnummer,
 areal, EM-nummer, udløbsdato og status. De samme bygningsoplysninger genereres

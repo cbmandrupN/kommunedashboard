@@ -57,12 +57,14 @@ python scripts\pipeline.py --as-of 2026-09-04 import-workbook `
 
 GitHub Action **Update EMOData** kører automatisk den første dag i hver måned
 kl. 03.17 UTC og kan også startes manuelt. Den henter seneste energimærker,
-matcher dem mod inventaret, opdaterer de kommunevise Excel-udtræk og genudgiver
-dashboardet. Excel-filerne indeholder adresse, postnummer, BFE, bygningsnummer,
-areal, EM-nummer, udløbsdato og status. De samme bygningsoplysninger genereres
-som kommunevise JSON-filer til den søgbare bygningsliste i dashboardet. Når
-EMOData leverer et officielt rapportlink, kan rapporten åbnes direkte fra
-bygningslisten.
+matcher dem mod inventaret og slår energimærkningsfirmaet op via Energistyrelsens
+offentlige Tjek Energimærke. Derefter opdateres de kommunevise Excel-udtræk, og
+dashboardet genudgives. Excel-filerne indeholder adresse, postnummer, BFE,
+bygningsnummer, areal, EM-nummer, energimærkningsfirma, udløbsdato og status.
+De samme bygningsoplysninger genereres som kommunevise JSON-filer til den
+søgbare bygningsliste i dashboardet. Rapporten kan åbnes direkte fra
+bygningslisten, og kommunevisningen opsummerer antal rapporter og omfattede
+bygninger pr. energimærkningsfirma.
 Hvis en bygning ikke kan matches i EMOData, bruges energimærket fra det
 oprindelige kommunale udtræk som fallback.
 Repositoryet skal have de

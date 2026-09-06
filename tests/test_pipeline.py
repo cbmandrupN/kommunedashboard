@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import zipfile
 from datetime import date
+from io import BytesIO
 from pathlib import Path
 from unittest import mock
 
@@ -83,6 +84,47 @@ class PipelineTests(unittest.TestCase):
         self.assertIsNone(
             _eligibility_exclusion_reason("110", 251, False, "Fjernvarme")
         )
+
+    def test_company_lookup_parses_em_number_and_company(self) -> None:
+        content = """
+        <table><tbody><tr>
+          <td>1</td><td>Testvej</td><td>1</td><td>1234</td><td>Testby</td>
+          <td>101</td><td>10</td><td>1</td><td>320</td><td>2020</td>
+          <td>A</td><td>A</td><td>A</td><td>311383519</td>
+          <td>01/01/2020</td><td>01/01/2030</td>
+          <td>Test &amp; Energi ApS</td>
+        </tr></tbody></table>
+        """
+        self.assertEqual(
+            pipeline._parse_company_lookup_html(content),
+            {"311383519": "Test & Energi ApS"},
+        )
+
+    def test_company_lookup_writes_addresses_to_template_rows(self) -> None:
+        cells = "".join(
+            f'<c r="{column}2" t="inlineStr"><is><t></t></is></c>'
+            for column in "ABCDEFGHI"
+        )
+        worksheet = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/'
+            'spreadsheetml/2006/main"><sheetData>'
+            f'<row r="2">{cells}</row></sheetData></worksheet>'
+        )
+        template = BytesIO()
+        with zipfile.ZipFile(template, "w") as workbook:
+            workbook.writestr("xl/worksheets/sheet1.xml", worksheet)
+
+        content = pipeline._company_lookup_workbook(
+            template.getvalue(),
+            [("Testvej", "12A", "1234")],
+        )
+
+        with zipfile.ZipFile(BytesIO(content)) as workbook:
+            generated = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        self.assertIn(">Testvej</t>", generated)
+        self.assertIn(">12A</t>", generated)
+        self.assertIn(">1234</t>", generated)
 
     def test_unique_label_can_cover_multiple_buildings(self) -> None:
         first = Building("1", "101", ("10",), "1", 100)
@@ -206,6 +248,11 @@ class PipelineTests(unittest.TestCase):
                     "_request_json",
                     return_value={"EnergyLabels": []},
                 ),
+                mock.patch.object(
+                    pipeline,
+                    "_fetch_energy_label_companies",
+                    return_value={"EM-SOURCE": "Kilde Firma"},
+                ),
                 mock.patch.object(pipeline, "write_dashboard"),
             ):
                 result = update_from_emodata(
@@ -253,6 +300,11 @@ class PipelineTests(unittest.TestCase):
                         ]
                     },
                 ),
+                mock.patch.object(
+                    pipeline,
+                    "_fetch_energy_label_companies",
+                    return_value={"311199190": "Test Energi ApS"},
+                ),
                 mock.patch.object(pipeline, "write_dashboard"),
             ):
                 update_from_emodata(
@@ -267,6 +319,10 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(
             payload["buildings"][0]["reportUrl"],
             "https://tjekenergimaerke.emoweb.dk/api/attachment/pdf/311199190",
+        )
+        self.assertEqual(
+            payload["buildings"][0]["companyName"],
+            "Test Energi ApS",
         )
 
     def test_building_export_is_valid_xlsx(self) -> None:
@@ -296,6 +352,7 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("Test Kommune", worksheet)
             self.assertIn("Mangler energimærke", worksheet)
             self.assertIn("BFE-nummer", worksheet)
+            self.assertIn("Energimærkningsfirma", worksheet)
             self.assertIn("Adresse", worksheet)
             self.assertIn("Testvej 12A", worksheet)
             self.assertIn("Postnr.", worksheet)
@@ -317,6 +374,7 @@ class PipelineTests(unittest.TestCase):
             "EM1": {
                 "validTo": date(2026, 9, 3),
                 "reportUrl": "https://tjekenergimaerke.emoweb.dk/report/EM1",
+                "companyName": "Test Energi ApS",
                 "owners": {"1": {("1", "10", "1"): expired}},
             }
         }
@@ -342,6 +400,10 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(
             payload["buildings"][1]["reportUrl"],
             "https://tjekenergimaerke.emoweb.dk/report/EM1",
+        )
+        self.assertEqual(
+            payload["buildings"][1]["companyName"],
+            "Test Energi ApS",
         )
 
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import base64
 import gzip
+import http.cookiejar
+import io
 import json
 import os
 import re
@@ -11,10 +13,12 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 import zipfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from html import unescape
 from pathlib import Path
 from typing import Any, Iterable
 from xml.etree import ElementTree as ET
@@ -26,6 +30,11 @@ EMODATA_URL = (
     "https://emoweb.dk/emodata/EMOData.svc/"
     "SearchEnergyLabelsMunicipality/{municipality}"
 )
+ENERGY_LABEL_LOOKUP_URL = "https://tjekenergimaerke.emoweb.dk/"
+ENERGY_LABEL_LOOKUP_TEMPLATE = (
+    f"{ENERGY_LABEL_LOOKUP_URL}TjekEnergimaerkeSkabelon.xlsx"
+)
+ENERGY_LABEL_COMPANY_BATCH_SIZE = 3000
 YEARS = tuple(str(year) for year in range(2026, 2038))
 BUCKETS = ("expired", *YEARS)
 PUBLIC_PERIODIC_AREA_THRESHOLD = 250
@@ -269,6 +278,207 @@ def _write_xlsx(path: Path, rows: list[list[str | int]]) -> None:
             workbook.writestr(filename, content.encode("utf-8"))
 
 
+def _company_lookup_workbook(
+    template: bytes,
+    addresses: list[tuple[str, str, str]],
+) -> bytes:
+    row_values = {
+        index + 2: (street, house_number, "", "", "", postal_code)
+        for index, (street, house_number, postal_code) in enumerate(addresses)
+    }
+    row_pattern = re.compile(
+        r'<row r="(\d+)"([^>]*)/>|<row r="(\d+)"([^>]*)>(.*?)</row>',
+        re.DOTALL,
+    )
+
+    with zipfile.ZipFile(io.BytesIO(template)) as source:
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w") as target:
+            for entry in source.infolist():
+                content = source.read(entry.filename)
+                if entry.filename == "xl/worksheets/sheet1.xml":
+                    worksheet = content.decode("utf-8")
+                    rows_written = 0
+
+                    def replace_row(match: re.Match[str]) -> str:
+                        nonlocal rows_written
+                        row_number = int(match.group(1) or match.group(3))
+                        values = row_values.get(row_number)
+                        if values is None:
+                            return match.group(0)
+                        attributes = match.group(2) or match.group(4) or ""
+                        cells = "".join(
+                            (
+                                f'<c r="{_xlsx_column(column)}{row_number}" '
+                                't="inlineStr"><is><t xml:space="preserve">'
+                                f"{escape(value)}</t></is></c>"
+                            )
+                            for column, value in enumerate(values, start=1)
+                            if value
+                        )
+                        rows_written += 1
+                        return (
+                            f'<row r="{row_number}"{attributes}>'
+                            f"{cells}</row>"
+                        )
+
+                    worksheet = row_pattern.sub(replace_row, worksheet)
+                    if rows_written != len(addresses):
+                        raise RuntimeError(
+                            "Tjek Energimærke template has fewer rows than expected"
+                        )
+                    content = worksheet.encode("utf-8")
+                target.writestr(entry, content)
+    return output.getvalue()
+
+
+def _parse_company_lookup_html(content: str) -> dict[str, str]:
+    companies: dict[str, str] = {}
+    for row in re.findall(r"<tr\b[^>]*>(.*?)</tr>", content, re.DOTALL | re.IGNORECASE):
+        cells = re.findall(
+            r"<td\b[^>]*>(.*?)</td>",
+            row,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if len(cells) < 17:
+            continue
+        values = [
+            unescape(re.sub(r"<[^>]+>", "", cell)).strip()
+            for cell in cells
+        ]
+        serial = values[13]
+        company = values[16]
+        if serial.isdigit() and company:
+            companies[serial] = company
+    return companies
+
+
+def _open_with_retries(
+    opener: urllib.request.OpenerDirector,
+    request: urllib.request.Request,
+    timeout: int,
+) -> bytes:
+    last_error: Exception | None = None
+    for attempt in range(4):
+        try:
+            with opener.open(request, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as error:
+            if error.code not in {429, 500, 502, 503, 504}:
+                raise RuntimeError(
+                    f"Tjek Energimærke rejected the request with HTTP {error.code}"
+                ) from error
+            last_error = error
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            last_error = error
+        if attempt < 3:
+            time.sleep(5 * (attempt + 1))
+    raise RuntimeError(
+        f"Tjek Energimærke request failed after retries: {last_error}"
+    )
+
+
+def _fetch_energy_label_companies(
+    buildings: Iterable[Building],
+) -> dict[str, str]:
+    addresses = sorted(
+        {
+            (building.street, building.house_number, building.postal_code)
+            for building in buildings
+            if building.street
+            and building.house_number
+            and building.postal_code not in {"", "0"}
+        }
+    )
+    if not addresses:
+        return {}
+
+    template = _open_with_retries(
+        urllib.request.build_opener(),
+        urllib.request.Request(
+            ENERGY_LABEL_LOOKUP_TEMPLATE,
+            headers={"User-Agent": "kommunedashboard/1.0"},
+        ),
+        timeout=60,
+    )
+    companies: dict[str, str] = {}
+    for offset in range(0, len(addresses), ENERGY_LABEL_COMPANY_BATCH_SIZE):
+        batch = addresses[offset : offset + ENERGY_LABEL_COMPANY_BATCH_SIZE]
+        workbook = _company_lookup_workbook(template, batch)
+        cookie_jar = http.cookiejar.CookieJar()
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(cookie_jar)
+        )
+        page = _open_with_retries(
+            opener,
+            urllib.request.Request(
+                ENERGY_LABEL_LOOKUP_URL,
+                headers={"User-Agent": "kommunedashboard/1.0"},
+            ),
+            timeout=60,
+        ).decode("utf-8")
+        token_match = re.search(
+            r'name="__RequestVerificationToken" type="hidden" value="([^"]+)"',
+            page,
+        )
+        if token_match is None:
+            raise RuntimeError(
+                "Tjek Energimærke did not return a verification token"
+            )
+
+        boundary = f"----kommunedashboard-{uuid.uuid4().hex}"
+        fields = [
+            (
+                f"--{boundary}\r\n"
+                'Content-Disposition: form-data; '
+                'name="__RequestVerificationToken"\r\n\r\n'
+                f"{token_match.group(1)}\r\n"
+            ).encode(),
+            (
+                f"--{boundary}\r\n"
+                'Content-Disposition: form-data; name="historicalEnergyLabels"'
+                "\r\n\r\ntrue\r\n"
+            ).encode(),
+            (
+                f"--{boundary}\r\n"
+                'Content-Disposition: form-data; name="InputFile"; '
+                'filename="energimaerker.xlsx"\r\n'
+                "Content-Type: "
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet\r\n\r\n"
+            ).encode(),
+            workbook,
+            b"\r\n",
+            f"--{boundary}--\r\n".encode(),
+        ]
+        result = _open_with_retries(
+            opener,
+            urllib.request.Request(
+                f"{ENERGY_LABEL_LOOKUP_URL}?handler=Search",
+                data=b"".join(fields),
+                headers={
+                    "User-Agent": "kommunedashboard/1.0",
+                    "Content-Type": f"multipart/form-data; boundary={boundary}",
+                },
+            ),
+            timeout=300,
+        ).decode("utf-8")
+        if (
+            'data-valmsg-for="InputFile"' in result
+            and "field-validation-error" in result
+        ):
+            raise RuntimeError(
+                "Tjek Energimærke could not process the address workbook"
+            )
+        batch_companies = _parse_company_lookup_html(result)
+        if not batch_companies:
+            raise RuntimeError(
+                "Tjek Energimærke returned no company results for a populated batch"
+            )
+        companies.update(batch_companies)
+    return companies
+
+
 def write_building_exports(
     export_dir: Path,
     municipalities: dict[str, str],
@@ -290,6 +500,7 @@ def write_building_exports(
                 record["buildingNumber"],
                 record["area"],
                 record["energyLabel"],
+                record["companyName"],
                 record["validTo"],
                 {
                     "unlabelled": "Mangler energimærke",
@@ -313,6 +524,7 @@ def write_building_exports(
                     "Bygningsnummer",
                     "Areal (m²)",
                     "EM-nummer",
+                    "Energimærkningsfirma",
                     "Gyldig til",
                     "Status",
                     "Mangler gyldigt mærke",
@@ -327,15 +539,24 @@ def _building_records_by_cvr(
     labels: dict[str, dict[str, Any]],
     as_of: date,
 ) -> dict[str, list[dict[str, str | int]]]:
-    latest_by_building: dict[tuple[str, str, str], tuple[str, date, str]] = {}
+    latest_by_building: dict[
+        tuple[str, str, str],
+        tuple[str, date, str, str],
+    ] = {}
     for serial, entry in labels.items():
         valid_to = entry["validTo"]
         report_url = _energy_label_report_url(serial, entry.get("reportUrl"))
+        company_name = str(entry.get("companyName") or "")
         for owner_buildings in entry["owners"].values():
             for key in owner_buildings:
                 current = latest_by_building.get(key)
                 if current is None or valid_to > current[1]:
-                    latest_by_building[key] = (serial, valid_to, report_url)
+                    latest_by_building[key] = (
+                        serial,
+                        valid_to,
+                        report_url,
+                        company_name,
+                    )
 
     records_by_cvr: dict[str, list[dict[str, str | int]]] = defaultdict(list)
     for key, building in buildings.items():
@@ -343,6 +564,7 @@ def _building_records_by_cvr(
         serial = label[0] if label else ""
         valid_to = label[1] if label else None
         report_url = label[2] if label else ""
+        company_name = label[3] if label else ""
         status = (
             "unlabelled"
             if valid_to is None
@@ -365,6 +587,7 @@ def _building_records_by_cvr(
                 "energyLabel": serial,
                 "validTo": valid_to.isoformat() if valid_to else "",
                 "reportUrl": report_url,
+                "companyName": company_name,
                 "status": status,
             }
         )
@@ -890,6 +1113,14 @@ def update_from_emodata(
                         report_url,
                     )
 
+    current_serials = {item[0] for item in latest_by_building.values()}
+    company_names = {
+        serial: company
+        for serial, company in _fetch_energy_label_companies(
+            item[2] for item in latest_by_building.values()
+        ).items()
+        if serial in current_serials
+    }
     labels: dict[str, dict[str, Any]] = {}
     for key, (serial, valid_to, building, report_url) in latest_by_building.items():
         entry = labels.setdefault(
@@ -897,6 +1128,7 @@ def update_from_emodata(
             {
                 "validTo": valid_to,
                 "reportUrl": report_url,
+                "companyName": company_names.get(serial, ""),
                 "owners": defaultdict(dict),
             },
         )
@@ -926,6 +1158,7 @@ def update_from_emodata(
             ),
             "unmatchedGeographicEnergyLabels": unmatched,
             "malformedEnergyLabels": malformed,
+            "energyLabelCompaniesFound": len(company_names),
         },
     )
     if export_dir:

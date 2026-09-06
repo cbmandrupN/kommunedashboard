@@ -47,6 +47,7 @@ type BuildingRecord = {
   energyLabel: string
   validTo: string
   reportUrl: string
+  companyName?: string
   status: BuildingStatus
 }
 
@@ -314,9 +315,33 @@ export default function App() {
         building.bfe,
         building.buildingNumber,
         building.energyLabel,
+        building.companyName ?? '',
       ].some((value) => value.toLocaleLowerCase('da-DK').includes(normalizedQuery))
     })
   }, [buildingFilter, buildingQuery, buildingRows])
+
+  const companySummary = useMemo(() => {
+    const companies = new Map<string, { reports: Set<string>; buildings: number }>()
+    buildingRows.forEach((building) => {
+      if (!building.companyName || !building.energyLabel) return
+      const current = companies.get(building.companyName) ?? {
+        reports: new Set<string>(),
+        buildings: 0,
+      }
+      current.reports.add(building.energyLabel)
+      current.buildings += 1
+      companies.set(building.companyName, current)
+    })
+    return Array.from(companies, ([name, values]) => ({
+      name,
+      reports: values.reports.size,
+      buildings: values.buildings,
+    })).sort((a, b) => (
+      b.reports - a.reports
+      || b.buildings - a.buildings
+      || a.name.localeCompare(b.name, 'da')
+    ))
+  }, [buildingRows])
 
   const totalUnlabelledBuildings = municipalities.reduce(
     (sum, row) => sum + unlabelledFor(row),
@@ -575,7 +600,7 @@ export default function App() {
                 <Input
                   value={buildingQuery}
                   onChange={(event) => setBuildingQuery(event.target.value)}
-                  placeholder="Søg adresse, BFE eller EM-nummer"
+                  placeholder="Søg adresse, firma, BFE eller EM-nummer"
                   className="w-full pl-9"
                 />
               </div>
@@ -593,6 +618,37 @@ export default function App() {
               </Select>
             </div>
 
+            {!buildingLoading && !buildingError && companySummary.length > 0 && (
+              <div className="border-b border-slate-200 bg-slate-50/60 p-4">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Energimærkningsfirmaer
+                </h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Seneste fundne energimærker i kommunen. Hvert EM-nummer tælles én gang.
+                </p>
+                <div className="mt-3 max-h-[280px] overflow-auto rounded-md border border-slate-200 bg-white">
+                  <table className="min-w-full">
+                    <thead>
+                      <tr>
+                        <th>Firma</th>
+                        <th className="num">Rapporter</th>
+                        <th className="num">Omfattede bygninger</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {companySummary.map((company) => (
+                        <tr key={company.name}>
+                          <td className="font-medium text-slate-900">{company.name}</td>
+                          <td className="num text-slate-700">{numberFormat.format(company.reports)}</td>
+                          <td className="num text-slate-700">{numberFormat.format(company.buildings)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {buildingError && (
               <div className="border-b border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
                 {buildingError}. Excel-udtrækket kan stadig hentes ovenfor.
@@ -602,13 +658,14 @@ export default function App() {
             {!buildingError && (
               <>
                 <div className="max-h-[620px] overflow-auto">
-                  <table className="min-w-[1050px]">
+                  <table className="min-w-[1250px]">
                     <thead>
                       <tr>
                         <th>Adresse</th>
                         <th>Status</th>
                         <th>Gyldig til</th>
                         <th>EM-nummer</th>
+                        <th>Firma</th>
                         <th>Rapport</th>
                         <th>BFE-nummer</th>
                         <th className="num">Bygning</th>
@@ -633,6 +690,7 @@ export default function App() {
                               {formatExpiryDate(building.validTo)}
                             </td>
                             <td className="text-slate-600">{building.energyLabel || '—'}</td>
+                            <td className="text-slate-600">{building.companyName || '—'}</td>
                             <td>
                               {building.reportUrl ? (
                                 <a

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-05T13:08:00.523563+00:00",
-  "asOf": "2026-09-05",
+  "generatedAt": "2026-09-06T11:29:48.506789+00:00",
+  "asOf": "2026-09-06",
   "source": "EMOData",
   "years": [
     "2026",
@@ -19,8 +19,8 @@
   ],
   "totals": {
     "labels": {
-      "expired": 1991,
-      "2026": 305,
+      "expired": 1992,
+      "2026": 304,
       "2027": 1390,
       "2028": 611,
       "2029": 626,
@@ -34,8 +34,8 @@
       "2037": 0
     },
     "buildings": {
-      "expired": 2475,
-      "2026": 458,
+      "expired": 2476,
+      "2026": 457,
       "2027": 1814,
       "2028": 895,
       "2029": 846,
@@ -49,8 +49,8 @@
       "2037": 0
     },
     "area": {
-      "expired": 3388809,
-      "2026": 648500,
+      "expired": 3389622,
+      "2026": 647687,
       "2027": 2572738,
       "2028": 1390361,
       "2029": 1228222,
@@ -65,8 +65,8 @@
     }
   },
   "totalsMissingLabel": {
-    "buildings": 5620,
-    "area": 6866195
+    "buildings": 5621,
+    "area": 6867008
   },
   "municipalities": [
     {
@@ -3547,8 +3547,8 @@
       "municipalityCode": "173",
       "metrics": {
         "labels": {
-          "expired": 62,
-          "2026": 1,
+          "expired": 63,
+          "2026": 0,
           "2027": 8,
           "2028": 30,
           "2029": 5,
@@ -3562,8 +3562,8 @@
           "2037": 0
         },
         "buildings": {
-          "expired": 67,
-          "2026": 1,
+          "expired": 68,
+          "2026": 0,
           "2027": 8,
           "2028": 39,
           "2029": 8,
@@ -3577,8 +3577,8 @@
           "2037": 0
         },
         "area": {
-          "expired": 40978,
-          "2026": 813,
+          "expired": 41791,
+          "2026": 0,
           "2027": 7028,
           "2028": 66667,
           "2029": 33372,
@@ -3597,11 +3597,11 @@
         "area": 18078
       },
       "missingLabel": {
-        "buildings": 88,
-        "area": 59056
+        "buildings": 89,
+        "area": 59869
       },
       "eligibleBuildings": 186,
-      "validLabelBuildings": 98
+      "validLabelBuildings": 97
     },
     {
       "name": "Læsø Kommune",
@@ -6158,10 +6158,10 @@
     "noHeatingInstallationBuildings": 1235,
     "protectedBuildings": 444,
     "labelsWithMultipleMunicipalOwners": 0,
-    "geographicEnergyLabelsReturned": 1264216,
+    "geographicEnergyLabelsReturned": 1264234,
     "matchedEnergyLabelCandidates": 22371,
     "sourceLabelFallbackBuildings": 698,
-    "unmatchedGeographicEnergyLabels": 1219281,
+    "unmatchedGeographicEnergyLabels": 1219299,
     "malformedEnergyLabels": 22564,
     "municipalityCount": 98,
     "municipalitiesWithLabels": 98,

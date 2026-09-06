@@ -9,6 +9,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from collections import Counter, defaultdict
@@ -326,20 +327,22 @@ def _building_records_by_cvr(
     labels: dict[str, dict[str, Any]],
     as_of: date,
 ) -> dict[str, list[dict[str, str | int]]]:
-    latest_by_building: dict[tuple[str, str, str], tuple[str, date]] = {}
+    latest_by_building: dict[tuple[str, str, str], tuple[str, date, str]] = {}
     for serial, entry in labels.items():
         valid_to = entry["validTo"]
+        report_url = str(entry.get("reportUrl") or "")
         for owner_buildings in entry["owners"].values():
             for key in owner_buildings:
                 current = latest_by_building.get(key)
                 if current is None or valid_to > current[1]:
-                    latest_by_building[key] = (serial, valid_to)
+                    latest_by_building[key] = (serial, valid_to, report_url)
 
     records_by_cvr: dict[str, list[dict[str, str | int]]] = defaultdict(list)
     for key, building in buildings.items():
         label = latest_by_building.get(key)
         serial = label[0] if label else ""
         valid_to = label[1] if label else None
+        report_url = label[2] if label else ""
         status = (
             "unlabelled"
             if valid_to is None
@@ -361,6 +364,7 @@ def _building_records_by_cvr(
                 "area": building.area,
                 "energyLabel": serial,
                 "validTo": valid_to.isoformat() if valid_to else "",
+                "reportUrl": report_url,
                 "status": status,
             }
         )
@@ -415,6 +419,32 @@ def _eligibility_exclusion_reason(
     if heating.strip().casefold() == "ingen varmeinstallation":
         return "noHeatingInstallationBuildings"
     return None
+
+
+def _normalize_report_url(value: Any) -> str:
+    url = str(value or "").strip()
+    if not url:
+        return ""
+    if url.startswith("/"):
+        url = urllib.parse.urljoin("https://emoweb.dk", url)
+    parsed = urllib.parse.urlparse(url)
+    hostname = (parsed.hostname or "").casefold()
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not hostname
+        or parsed.username
+        or parsed.password
+        or not (
+            hostname == "emoweb.dk"
+            or hostname.endswith(".emoweb.dk")
+            or hostname in {"sparenergi.dk", "www.sparenergi.dk"}
+        )
+    ):
+        return ""
+    netloc = hostname if parsed.port is None else f"{hostname}:{parsed.port}"
+    return urllib.parse.urlunparse(
+        ("https", netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
+    )
 
 
 def load_municipalities(path: Path) -> dict[str, str]:
@@ -773,9 +803,9 @@ def update_from_emodata(
 
     latest_by_building: dict[
         tuple[str, str, str],
-        tuple[str, date, Building],
+        tuple[str, date, Building, str],
     ] = {
-        key: (building.source_energy_label, building.source_valid_to, building)
+        key: (building.source_energy_label, building.source_valid_to, building, "")
         for key, building in buildings.items()
         if building.source_energy_label and building.source_valid_to
     }
@@ -813,6 +843,7 @@ def update_from_emodata(
             except (ValueError, OverflowError):
                 malformed += 1
                 continue
+            report_url = _normalize_report_url(item.get("DEMOLink"))
 
             candidates = by_bfe.get((municipality_code, bfe), [])
             building_numbers = set(
@@ -834,16 +865,31 @@ def update_from_emodata(
             for key, building in candidates:
                 emodata_matched_building_keys.add(key)
                 current = latest_by_building.get(key)
-                if current is None or valid_to > current[1]:
-                    latest_by_building[key] = (serial, valid_to, building)
+                if (
+                    current is None
+                    or valid_to > current[1]
+                    or (valid_to == current[1] and report_url and not current[3])
+                ):
+                    latest_by_building[key] = (
+                        serial,
+                        valid_to,
+                        building,
+                        report_url,
+                    )
 
     labels: dict[str, dict[str, Any]] = {}
-    for key, (serial, valid_to, building) in latest_by_building.items():
+    for key, (serial, valid_to, building, report_url) in latest_by_building.items():
         entry = labels.setdefault(
             serial,
-            {"validTo": valid_to, "owners": defaultdict(dict)},
+            {
+                "validTo": valid_to,
+                "reportUrl": report_url,
+                "owners": defaultdict(dict),
+            },
         )
         entry["validTo"] = max(entry["validTo"], valid_to)
+        if report_url and not entry["reportUrl"]:
+            entry["reportUrl"] = report_url
         entry["owners"][building.cvr][key] = building
 
     dashboard = aggregate_labels(

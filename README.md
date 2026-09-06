@@ -60,7 +60,9 @@ kl. 03.17 UTC og kan også startes manuelt. Den henter seneste energimærker,
 matcher dem mod inventaret, opdaterer de kommunevise Excel-udtræk og genudgiver
 dashboardet. Excel-filerne indeholder adresse, postnummer, BFE, bygningsnummer,
 areal, EM-nummer, udløbsdato og status. De samme bygningsoplysninger genereres
-som kommunevise JSON-filer til den søgbare bygningsliste i dashboardet.
+som kommunevise JSON-filer til den søgbare bygningsliste i dashboardet. Når
+EMOData leverer et officielt rapportlink, kan rapporten åbnes direkte fra
+bygningslisten.
 Hvis en bygning ikke kan matches i EMOData, bruges energimærket fra det
 oprindelige kommunale udtræk som fallback.
 Repositoryet skal have de

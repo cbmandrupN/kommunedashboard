@@ -31,7 +31,7 @@ type Horizon = Year
 type ChartBucket = Horizon | 'expired' | 'unlabelled'
 type Bucket = 'expired' | Year
 type Metric = Record<Bucket, number>
-type SortKey = 'name' | 'selected' | 'share' | 'valid' | 'expired' | 'unlabelled' | 'eligible'
+type SortKey = 'name' | 'selected' | 'share' | 'valid' | 'expired' | 'unlabelled'
 type TableMode = 'year' | 'expired' | 'unlabelled'
 type BuildingStatus = 'valid' | 'expired' | 'unlabelled'
 type BuildingFilter = 'all' | BuildingStatus | Year
@@ -297,7 +297,6 @@ export default function App() {
         if (sortKey === 'valid') result = a.validLabelBuildings - b.validLabelBuildings
         if (sortKey === 'expired') result = expiredFor(a) - expiredFor(b)
         if (sortKey === 'unlabelled') result = unlabelledFor(a) - unlabelledFor(b)
-        if (sortKey === 'eligible') result = a.eligibleBuildings - b.eligibleBuildings
         return sortDescending ? -result : result
       })
   }, [horizon, query, sortDescending, sortKey, tableMode])
@@ -697,7 +696,6 @@ export default function App() {
                   <SortableHeader label="Gyldige mærker" active={sortKey === 'valid'} descending={sortDescending} onClick={() => setSort('valid')} align="right" />
                   <SortableHeader label="Udløbet mærke" active={sortKey === 'expired'} descending={sortDescending} onClick={() => setSort('expired')} align="right" />
                   <SortableHeader label="Mangler mærke" active={sortKey === 'unlabelled'} descending={sortDescending} onClick={() => setSort('unlabelled')} align="right" />
-                  <SortableHeader label="Bygninger omfattet af energimærkningsloven" active={sortKey === 'eligible'} descending={sortDescending} onClick={() => setSort('eligible')} align="right" />
                 </tr>
               </thead>
               <tbody>
@@ -723,7 +721,6 @@ export default function App() {
                       <td className="num text-slate-500">{formatBuildings(row.validLabelBuildings)}</td>
                       <td className="num font-semibold text-orange-700">{formatBuildings(expiredFor(row))}</td>
                       <td className="num font-semibold text-red-700">{formatBuildings(unlabelledFor(row))}</td>
-                      <td className="num font-semibold text-slate-700">{formatBuildings(row.eligibleBuildings)}</td>
                     </tr>
                   )
                 })}

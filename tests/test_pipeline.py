@@ -248,10 +248,7 @@ class PipelineTests(unittest.TestCase):
                                 "BFENumber": "10",
                                 "BuildingNumbers": "1",
                                 "ValidTo": "2030-01-01",
-                                "DEMOLink": (
-                                    "http://tjekenergimaerke.emoweb.dk/"
-                                    "Report/311199190"
-                                ),
+                                "DEMOLink": "",
                             }
                         ]
                     },
@@ -269,7 +266,7 @@ class PipelineTests(unittest.TestCase):
             )
         self.assertEqual(
             payload["buildings"][0]["reportUrl"],
-            "https://tjekenergimaerke.emoweb.dk/Report/311199190",
+            "https://tjekenergimaerke.emoweb.dk/api/attachment/pdf/311199190",
         )
 
     def test_building_export_is_valid_xlsx(self) -> None:

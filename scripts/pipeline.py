@@ -330,7 +330,7 @@ def _building_records_by_cvr(
     latest_by_building: dict[tuple[str, str, str], tuple[str, date, str]] = {}
     for serial, entry in labels.items():
         valid_to = entry["validTo"]
-        report_url = str(entry.get("reportUrl") or "")
+        report_url = _energy_label_report_url(serial, entry.get("reportUrl"))
         for owner_buildings in entry["owners"].values():
             for key in owner_buildings:
                 current = latest_by_building.get(key)
@@ -444,6 +444,19 @@ def _normalize_report_url(value: Any) -> str:
     netloc = hostname if parsed.port is None else f"{hostname}:{parsed.port}"
     return urllib.parse.urlunparse(
         ("https", netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
+    )
+
+
+def _energy_label_report_url(serial: str, supplied_url: Any = None) -> str:
+    report_url = _normalize_report_url(supplied_url)
+    if report_url:
+        return report_url
+    serial = serial.strip()
+    if not serial.isdigit():
+        return ""
+    return (
+        "https://tjekenergimaerke.emoweb.dk/api/attachment/pdf/"
+        f"{urllib.parse.quote(serial, safe='')}"
     )
 
 
@@ -843,7 +856,7 @@ def update_from_emodata(
             except (ValueError, OverflowError):
                 malformed += 1
                 continue
-            report_url = _normalize_report_url(item.get("DEMOLink"))
+            report_url = _energy_label_report_url(serial, item.get("DEMOLink"))
 
             candidates = by_bfe.get((municipality_code, bfe), [])
             building_numbers = set(

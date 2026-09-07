@@ -515,7 +515,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1500px] space-y-5 p-4 sm:p-6">
+      <main className="mx-auto flex max-w-[1500px] flex-col gap-5 p-4 sm:p-6">
         <section className="overflow-hidden rounded-2xl bg-slate-950 text-white shadow-sm">
           <div className="relative px-5 py-6 sm:px-7">
             <div className="absolute inset-y-0 right-0 hidden w-1/3 bg-[radial-gradient(circle_at_center,rgba(37,99,235,0.35),transparent_70%)] lg:block" />
@@ -667,7 +667,7 @@ export default function App() {
         </Card>
 
         {companyAnalysis && companies.length > 0 && selectedCompany && (
-          <Card className="overflow-hidden">
+          <Card className="order-last overflow-hidden">
             <div className="flex flex-col gap-3 border-b border-slate-200 p-5 lg:flex-row lg:items-center">
               <div className="mr-auto">
                 <h2 className="text-[15px] font-semibold text-slate-900">

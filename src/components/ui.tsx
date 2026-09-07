@@ -1,5 +1,6 @@
 import type {
   ButtonHTMLAttributes,
+  HTMLAttributes,
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
@@ -37,8 +38,19 @@ export function Button({
   )
 }
 
-export function Card({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cn('rounded-xl border border-slate-200 bg-white shadow-sm', className)}>{children}</div>
+export function Card({
+  className,
+  children,
+  ...rest
+}: HTMLAttributes<HTMLDivElement> & { children: ReactNode }) {
+  return (
+    <div
+      className={cn('rounded-xl border border-slate-200 bg-white shadow-sm', className)}
+      {...rest}
+    >
+      {children}
+    </div>
+  )
 }
 
 export function Badge({

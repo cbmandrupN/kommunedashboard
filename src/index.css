@@ -61,3 +61,7 @@ tbody tr:hover td {
 tbody tr.selected-municipality td {
   background: #eff6ff;
 }
+
+tbody tr.selected-company td {
+  background: #eff6ff;
+}

@@ -168,6 +168,61 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(result["municipalities"][0]["validLabelBuildings"], 2)
         self.assertEqual(result["totalsMissingLabel"]["buildings"], 0)
 
+    def test_company_analysis_summarizes_reports_area_and_municipalities(self) -> None:
+        first = Building("1", "101", ("10",), "1", 100)
+        second = Building("1", "101", ("10",), "2", 200)
+        third = Building("2", "102", ("20",), "1", 300)
+        unattributed = Building("2", "102", ("30",), "1", 400)
+        result = aggregate_labels(
+            municipalities={"1": "Første Kommune", "2": "Anden Kommune"},
+            municipality_codes={"1": "101", "2": "102"},
+            labels={
+                "EM1": {
+                    "validTo": date(2027, 1, 1),
+                    "companyName": "Test Energi ApS",
+                    "owners": {
+                        "1": {
+                            ("1", "10", "1"): first,
+                            ("1", "10", "2"): second,
+                        }
+                    },
+                },
+                "EM2": {
+                    "validTo": date(2026, 1, 1),
+                    "companyName": "Test Energi ApS",
+                    "owners": {"2": {("2", "20", "1"): third}},
+                },
+                "EM3": {
+                    "validTo": date(2038, 1, 1),
+                    "companyName": "",
+                    "owners": {"2": {("2", "30", "1"): unattributed}},
+                },
+            },
+            buildings={
+                ("1", "10", "1"): first,
+                ("1", "10", "2"): second,
+                ("2", "20", "1"): third,
+                ("2", "30", "1"): unattributed,
+            },
+            as_of=date(2026, 9, 4),
+            source_name="fixture",
+            quality={},
+        )
+
+        analysis = result["companyAnalysis"]
+        self.assertEqual(analysis["totalReports"], 3)
+        self.assertEqual(analysis["attributedReports"], 2)
+        self.assertEqual(analysis["attributedBuildings"], 3)
+        self.assertEqual(analysis["attributedArea"], 600)
+        company = analysis["companies"][0]
+        self.assertEqual(company["reports"], 2)
+        self.assertEqual(company["buildings"], 3)
+        self.assertEqual(company["area"], 600)
+        self.assertEqual(company["expiry"]["expired"], 1)
+        self.assertEqual(company["expiry"]["2027"], 1)
+        self.assertEqual(len(company["municipalities"]), 2)
+        self.assertEqual(company["municipalities"][0]["name"], "Første Kommune")
+
     def test_expired_and_unlabelled_buildings_are_missing_valid_labels(self) -> None:
         expired = Building("1", "101", ("10",), "1", 100)
         unlabelled = Building("1", "101", ("10",), "2", 200)
@@ -264,6 +319,12 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(municipality["validLabelBuildings"], 1)
         self.assertEqual(municipality["unlabelled"]["buildings"], 1)
         self.assertEqual(result["quality"]["sourceLabelFallbackBuildings"], 1)
+        self.assertEqual(result["schemaVersion"], 3)
+        self.assertEqual(result["companyAnalysis"]["attributedReports"], 1)
+        self.assertEqual(
+            result["companyAnalysis"]["companies"][0]["name"],
+            "Kilde Firma",
+        )
 
     def test_emodata_report_link_is_added_to_building_data(self) -> None:
         building = Building("1", "101", ("10",), "1", 300)

@@ -64,7 +64,11 @@ bygningsnummer, areal, EM-nummer, energimærkningsfirma, udløbsdato og status.
 De samme bygningsoplysninger genereres som kommunevise JSON-filer til den
 søgbare bygningsliste i dashboardet. Rapporten kan åbnes direkte fra
 bygningslisten, og kommunevisningen opsummerer antal rapporter og omfattede
-bygninger pr. energimærkningsfirma.
+bygninger pr. energimærkningsfirma. Den landsdækkende firmaanalyse viser
+desuden firmaernes markedsandel blandt sikkert matchede rapporter, antal
+rapporter, omfattede bygninger og m², udløbsfordeling samt kommunevis
+aktivitet. Fra kommuneoversigten kan den valgte kommunes bygningsliste åbnes
+med et præcist filter på firmaet.
 Hvis en bygning ikke kan matches i EMOData, bruges energimærket fra det
 oprindelige kommunale udtræk som fallback.
 Repositoryet skal have de

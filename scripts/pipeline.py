@@ -934,7 +934,7 @@ def aggregate_labels(
         any(row["metrics"]["labels"].values()) for row in rows.values()
     )
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "generatedAt": datetime.now(UTC).isoformat(),
         "asOf": as_of.isoformat(),
         "source": source_name,
@@ -942,12 +942,96 @@ def aggregate_labels(
         "totals": totals,
         "totalsMissingLabel": totals_missing_label,
         "municipalities": sorted(rows.values(), key=lambda row: row["name"]),
+        "companyAnalysis": _company_analysis(
+            labels,
+            municipalities,
+            as_of,
+        ),
         "quality": {
             **quality,
             "municipalityCount": len(rows),
             "municipalitiesWithLabels": municipalities_with_labels,
             "uniqueEnergyLabels": len(labels),
         },
+    }
+
+
+def _company_analysis(
+    labels: dict[str, dict[str, Any]],
+    municipalities: dict[str, str],
+    as_of: date,
+) -> dict[str, Any]:
+    companies: dict[str, dict[str, Any]] = {}
+    attributed_reports = 0
+    attributed_buildings = 0
+    attributed_area = 0
+
+    for entry in labels.values():
+        company_name = str(entry.get("companyName") or "").strip()
+        if not company_name:
+            continue
+
+        attributed_reports += 1
+        expiry_bucket = _bucket(entry["validTo"], as_of) or "later"
+        company = companies.setdefault(
+            company_name,
+            {
+                "name": company_name,
+                "reports": 0,
+                "buildings": 0,
+                "area": 0,
+                "expiry": {**{bucket: 0 for bucket in BUCKETS}, "later": 0},
+                "municipalities": {},
+            },
+        )
+        company["reports"] += 1
+        company["expiry"][expiry_bucket] += 1
+
+        for cvr, owner_buildings in entry["owners"].items():
+            building_count = len(owner_buildings)
+            area = sum(building.area for building in owner_buildings.values())
+            attributed_buildings += building_count
+            attributed_area += area
+            company["buildings"] += building_count
+            company["area"] += area
+            municipality = company["municipalities"].setdefault(
+                cvr,
+                {
+                    "name": municipalities[cvr],
+                    "cvr": cvr,
+                    "reports": 0,
+                    "buildings": 0,
+                    "area": 0,
+                },
+            )
+            municipality["reports"] += 1
+            municipality["buildings"] += building_count
+            municipality["area"] += area
+
+    company_rows = []
+    for company in companies.values():
+        company_rows.append(
+            {
+                **company,
+                "municipalities": sorted(
+                    company["municipalities"].values(),
+                    key=lambda row: (
+                        -row["reports"],
+                        -row["buildings"],
+                        row["name"],
+                    ),
+                ),
+            }
+        )
+    company_rows.sort(
+        key=lambda row: (-row["reports"], -row["buildings"], row["name"])
+    )
+    return {
+        "totalReports": len(labels),
+        "attributedReports": attributed_reports,
+        "attributedBuildings": attributed_buildings,
+        "attributedArea": attributed_area,
+        "companies": company_rows,
     }
 
 

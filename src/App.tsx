@@ -36,6 +36,7 @@ type SortKey = 'name' | 'selected' | 'share' | 'valid' | 'expired' | 'unlabelled
 type TableMode = 'year' | 'expired' | 'unlabelled'
 type BuildingStatus = 'valid' | 'expired' | 'unlabelled'
 type BuildingFilter = 'all' | BuildingStatus | Year
+type CompanyExpiry = Record<Bucket | 'later', number>
 
 type BuildingRecord = {
   municipalityCode: string
@@ -73,6 +74,31 @@ type Municipality = {
   validLabelBuildings: number
 }
 
+type CompanyMunicipality = {
+  name: string
+  cvr: string
+  reports: number
+  buildings: number
+  area: number
+}
+
+type CompanyRecord = {
+  name: string
+  reports: number
+  buildings: number
+  area: number
+  expiry: CompanyExpiry
+  municipalities: CompanyMunicipality[]
+}
+
+type CompanyAnalysis = {
+  totalReports: number
+  attributedReports: number
+  attributedBuildings: number
+  attributedArea: number
+  companies: CompanyRecord[]
+}
+
 type DashboardData = {
   schemaVersion: number
   generatedAt: string
@@ -86,6 +112,7 @@ type DashboardData = {
   }
   totalsMissingLabel: { buildings: number; area: number }
   municipalities: Municipality[]
+  companyAnalysis?: CompanyAnalysis
   quality: {
     municipalityCount: number
     uniqueEnergyLabels: number
@@ -162,6 +189,10 @@ function formatBuildings(value: number) {
   return `${numberFormat.format(value)} bygninger`
 }
 
+function formatArea(value: number) {
+  return `${numberFormat.format(value)} m²`
+}
+
 function formatExpiryDate(value: string) {
   return value ? shortDateFormat.format(new Date(`${value}T12:00:00`)) : '—'
 }
@@ -207,10 +238,17 @@ export default function App() {
   const [tableMode, setTableMode] = useState<TableMode>('year')
   const [buildingRows, setBuildingRows] = useState<BuildingRecord[]>([])
   const [buildingQuery, setBuildingQuery] = useState('')
+  const [buildingCompanyFilter, setBuildingCompanyFilter] = useState('')
   const [buildingFilter, setBuildingFilter] = useState<BuildingFilter>('2026')
   const [visibleBuildingCount, setVisibleBuildingCount] = useState(BUILDING_PAGE_SIZE)
   const [buildingLoading, setBuildingLoading] = useState(false)
   const [buildingError, setBuildingError] = useState<string | null>(null)
+  const companyAnalysis = dashboard.companyAnalysis
+  const companies = companyAnalysis?.companies ?? []
+  const [companyQuery, setCompanyQuery] = useState('')
+  const [selectedCompanyName, setSelectedCompanyName] = useState(
+    companies[0]?.name ?? '',
+  )
   const totals = dashboard.totals.buildings
   const selectedMunicipality = municipalities.find((row) => row.cvr === selectedCvr)
   const chartMetrics = selectedMunicipality?.metrics.buildings ?? totals
@@ -225,7 +263,6 @@ export default function App() {
 
     const controller = new AbortController()
     setBuildingRows([])
-    setBuildingQuery('')
     setBuildingLoading(true)
     setBuildingError(null)
     fetch(`${import.meta.env.BASE_URL}buildings/${selectedCvr}.json`, {
@@ -254,7 +291,14 @@ export default function App() {
 
   useEffect(() => {
     setVisibleBuildingCount(BUILDING_PAGE_SIZE)
-  }, [buildingFilter, buildingQuery, selectedCvr])
+  }, [buildingCompanyFilter, buildingFilter, buildingQuery, selectedCvr])
+
+  const selectMunicipality = (cvr: string | null, companyName = '') => {
+    setSelectedCvr(cvr)
+    setBuildingCompanyFilter(companyName)
+    setBuildingQuery('')
+    if (companyName) setBuildingFilter('all')
+  }
 
   const selectHorizon = (value: Horizon) => {
     setHorizon(value)
@@ -307,6 +351,9 @@ export default function App() {
   const filteredBuildingRows = useMemo(() => {
     const normalizedQuery = buildingQuery.trim().toLocaleLowerCase('da-DK')
     return buildingRows.filter((building) => {
+      if (buildingCompanyFilter && building.companyName !== buildingCompanyFilter) {
+        return false
+      }
       if (!buildingMatchesFilter(building, buildingFilter)) return false
       if (!normalizedQuery) return true
       return [
@@ -318,7 +365,7 @@ export default function App() {
         building.companyName ?? '',
       ].some((value) => value.toLocaleLowerCase('da-DK').includes(normalizedQuery))
     })
-  }, [buildingFilter, buildingQuery, buildingRows])
+  }, [buildingCompanyFilter, buildingFilter, buildingQuery, buildingRows])
 
   const companySummary = useMemo(() => {
     const companies = new Map<string, { reports: Set<string>; buildings: number }>()
@@ -342,6 +389,43 @@ export default function App() {
       || a.name.localeCompare(b.name, 'da')
     ))
   }, [buildingRows])
+
+  const filteredCompanies = useMemo(() => {
+    const normalizedQuery = companyQuery.trim().toLocaleLowerCase('da-DK')
+    if (!normalizedQuery) return companies
+    return companies.filter((company) => (
+      company.name.toLocaleLowerCase('da-DK').includes(normalizedQuery)
+      || company.municipalities.some((municipality) => (
+        municipality.name.toLocaleLowerCase('da-DK').includes(normalizedQuery)
+      ))
+    ))
+  }, [companies, companyQuery])
+
+  const selectedCompany = companies.find(
+    (company) => company.name === selectedCompanyName,
+  ) ?? companies[0]
+  const selectedCompanyShare = selectedCompany && companyAnalysis?.attributedReports
+    ? selectedCompany.reports / companyAnalysis.attributedReports
+    : 0
+  const companyExpiryData = selectedCompany
+    ? [
+        {
+          name: 'Udløbet',
+          value: selectedCompany.expiry.expired,
+          color: '#ea580c',
+        },
+        ...YEARS.map((year) => ({
+          name: year,
+          value: selectedCompany.expiry[year],
+          color: chartColors[year],
+        })),
+        {
+          name: 'Efter 2037',
+          value: selectedCompany.expiry.later,
+          color: '#64748b',
+        },
+      ].filter((item) => item.value > 0)
+    : []
 
   const totalUnlabelledBuildings = municipalities.reduce(
     (sum, row) => sum + unlabelledFor(row),
@@ -535,7 +619,7 @@ export default function App() {
                   <Button variant="secondary" size="sm" onClick={() => downloadMunicipalityExport(selectedMunicipality)}>
                     <Download size={14} /> Hent Excel-udtræk
                   </Button>
-                  <Button variant="secondary" size="sm" onClick={() => setSelectedCvr(null)}>
+                  <Button variant="secondary" size="sm" onClick={() => selectMunicipality(null)}>
                     Vis alle kommuner
                   </Button>
                 </>
@@ -582,8 +666,214 @@ export default function App() {
           </ResponsiveContainer>
         </Card>
 
-        {selectedMunicipality && (
+        {companyAnalysis && companies.length > 0 && selectedCompany && (
           <Card className="overflow-hidden">
+            <div className="flex flex-col gap-3 border-b border-slate-200 p-5 lg:flex-row lg:items-center">
+              <div className="mr-auto">
+                <h2 className="text-[15px] font-semibold text-slate-900">
+                  Udvidet firmaanalyse
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  {numberFormat.format(companyAnalysis.attributedReports)} af{' '}
+                  {numberFormat.format(companyAnalysis.totalReports)} rapporter har et sikkert firmamatch.
+                  Markedsandel beregnes blandt disse rapporter.
+                </p>
+              </div>
+              <div className="relative w-full lg:w-80">
+                <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={15} />
+                <Input
+                  value={companyQuery}
+                  onChange={(event) => setCompanyQuery(event.target.value)}
+                  placeholder="Søg firma eller kommune"
+                  aria-label="Søg firma eller kommune i firmaanalysen"
+                  className="w-full pl-9"
+                />
+              </div>
+            </div>
+
+            <div className="grid xl:grid-cols-[minmax(0,1.05fr)_minmax(460px,0.95fr)]">
+              <div className="border-b border-slate-200 xl:border-b-0 xl:border-r">
+                <div className="max-h-[560px] overflow-auto">
+                  <table className="min-w-[900px]">
+                    <thead>
+                      <tr>
+                        <th>Firma</th>
+                        <th className="num">Markedsandel</th>
+                        <th className="num">Rapporter</th>
+                        <th className="num">Bygninger</th>
+                        <th className="num">Areal</th>
+                        <th className="num">Kommuner</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCompanies.map((company) => (
+                        <tr
+                          key={company.name}
+                          className={cn(
+                            'cursor-pointer',
+                            selectedCompany.name === company.name && 'selected-company',
+                          )}
+                          onClick={() => setSelectedCompanyName(company.name)}
+                        >
+                          <td>
+                            <button
+                              className="font-medium text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                              onClick={() => setSelectedCompanyName(company.name)}
+                              aria-pressed={selectedCompany.name === company.name}
+                            >
+                              {company.name}
+                            </button>
+                          </td>
+                          <td className="num font-semibold text-blue-700">
+                            {percentageFormat.format(
+                              company.reports / companyAnalysis.attributedReports,
+                            )}
+                          </td>
+                          <td className="num text-slate-700">
+                            {numberFormat.format(company.reports)}
+                          </td>
+                          <td className="num text-slate-700">
+                            {numberFormat.format(company.buildings)}
+                          </td>
+                          <td className="num text-slate-700">{formatArea(company.area)}</td>
+                          <td className="num text-slate-700">
+                            {numberFormat.format(company.municipalities.length)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {filteredCompanies.length === 0 && (
+                  <div className="px-5 py-12 text-center text-sm text-slate-500">
+                    Ingen firmaer eller kommuner matcher søgningen.
+                  </div>
+                )}
+              </div>
+
+              <div className="min-w-0 bg-slate-50/50 p-5">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">
+                    Valgt firma
+                  </div>
+                  <h3 className="mt-1 text-lg font-semibold text-slate-950">
+                    {selectedCompany.name}
+                  </h3>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <CompanyMetric
+                    label="Markedsandel"
+                    value={percentageFormat.format(selectedCompanyShare)}
+                  />
+                  <CompanyMetric
+                    label="Rapporter"
+                    value={numberFormat.format(selectedCompany.reports)}
+                  />
+                  <CompanyMetric
+                    label="Bygninger"
+                    value={numberFormat.format(selectedCompany.buildings)}
+                  />
+                  <CompanyMetric
+                    label="Omfattet areal"
+                    value={formatArea(selectedCompany.area)}
+                  />
+                  <CompanyMetric
+                    label="Kommuner"
+                    value={numberFormat.format(selectedCompany.municipalities.length)}
+                  />
+                </div>
+
+                <div className="mt-5">
+                  <h4 className="text-sm font-semibold text-slate-900">
+                    Rapporternes udløbsår
+                  </h4>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Antal unikke EM-numre fordelt efter seneste gyldighedsdato.
+                  </p>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart
+                      data={companyExpiryData}
+                      margin={{ top: 18, right: 4, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                      <XAxis
+                        dataKey="name"
+                        interval={0}
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={{ stroke: '#cbd5e1' }}
+                      />
+                      <YAxis
+                        allowDecimals={false}
+                        width={38}
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <Tooltip formatter={(value) => `${numberFormat.format(Number(value))} rapporter`} />
+                      <Bar dataKey="value" name="Rapporter" radius={[4, 4, 0, 0]} maxBarSize={36}>
+                        {companyExpiryData.map((item) => (
+                          <Cell key={item.name} fill={item.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="mt-4">
+                  <h4 className="text-sm font-semibold text-slate-900">
+                    Kommuner
+                  </h4>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Klik på en kommune for at åbne dens bygninger filtreret på firmaet.
+                  </p>
+                  <div className="mt-3 max-h-[280px] overflow-auto rounded-md border border-slate-200 bg-white">
+                    <table className="min-w-[580px]">
+                      <thead>
+                        <tr>
+                          <th>Kommune</th>
+                          <th className="num">Rapporter</th>
+                          <th className="num">Bygninger</th>
+                          <th className="num">Areal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedCompany.municipalities.map((municipality) => (
+                          <tr key={municipality.cvr}>
+                            <td>
+                              <button
+                                className="font-medium text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                                onClick={() => selectMunicipality(
+                                  municipality.cvr,
+                                  selectedCompany.name,
+                                )}
+                              >
+                                {municipality.name}
+                              </button>
+                            </td>
+                            <td className="num text-slate-700">
+                              {numberFormat.format(municipality.reports)}
+                            </td>
+                            <td className="num text-slate-700">
+                              {numberFormat.format(municipality.buildings)}
+                            </td>
+                            <td className="num text-slate-700">
+                              {formatArea(municipality.area)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {selectedMunicipality && (
+          <Card id="bygningsliste" className="overflow-hidden">
             <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center">
               <div className="mr-auto">
                 <h2 className="text-[15px] font-semibold text-slate-900">
@@ -616,7 +906,22 @@ export default function App() {
                   <option key={year} value={year}>Udløber i {year}</option>
                 ))}
               </Select>
+              {buildingCompanyFilter && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setBuildingCompanyFilter('')}
+                >
+                  Vis alle firmaer
+                </Button>
+              )}
             </div>
+
+            {buildingCompanyFilter && (
+              <div className="border-b border-blue-200 bg-blue-50 px-4 py-2 text-xs text-blue-800">
+                Firmafilter: <span className="font-semibold">{buildingCompanyFilter}</span>
+              </div>
+            )}
 
             {!buildingLoading && !buildingError && companySummary.length > 0 && (
               <div className="border-b border-slate-200 bg-slate-50/60 p-4">
@@ -778,12 +1083,12 @@ export default function App() {
                     <tr
                       key={row.cvr}
                       className={cn('cursor-pointer', selectedCvr === row.cvr && 'selected-municipality')}
-                      onClick={() => setSelectedCvr(row.cvr)}
+                      onClick={() => selectMunicipality(row.cvr)}
                     >
                       <td>
                         <button
                           className="font-medium text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                          onClick={() => setSelectedCvr(row.cvr)}
+                          onClick={() => selectMunicipality(row.cvr)}
                           aria-pressed={selectedCvr === row.cvr}
                         >
                           {row.name}
@@ -825,6 +1130,17 @@ function BuildingStatusBadge({ status }: { status: BuildingStatus }) {
   if (status === 'unlabelled') return <Badge color="red">Mangler mærke</Badge>
   if (status === 'expired') return <Badge color="amber">Udløbet</Badge>
   return <Badge color="green">Gyldigt</Badge>
+}
+
+function CompanyMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </div>
+      <div className="mt-1 text-base font-semibold text-slate-950">{value}</div>
+    </div>
+  )
 }
 
 function DeadlineCard({

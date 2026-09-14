@@ -710,7 +710,7 @@ def _labels_for_buildings(
     return scoped_labels
 
 
-def _aggregate_area_scopes(
+def _aggregate_dashboard_scopes(
     municipalities: dict[str, str],
     municipality_codes: dict[str, str],
     labels: dict[str, dict[str, Any]],
@@ -721,79 +721,109 @@ def _aggregate_area_scopes(
     source_fallback_keys: set[tuple[str, str, str]] | None = None,
 ) -> tuple[
     dict[str, Any],
-    dict[tuple[str, str, str], Building],
-    dict[str, dict[str, Any]],
+    dict[
+        str,
+        tuple[
+            dict[tuple[str, str, str], Building],
+            dict[str, dict[str, Any]],
+        ],
+    ],
 ]:
-    current_buildings = {
-        key: building
-        for key, building in buildings.items()
-        if building.area > PUBLIC_PERIODIC_AREA_THRESHOLD
+    scope_buildings = {
+        "current": {
+            key: building
+            for key, building in buildings.items()
+            if (
+                building.area > PUBLIC_PERIODIC_AREA_THRESHOLD
+                and building.ownership_type == "direct"
+            )
+        },
+        "with-coowners": {
+            key: building
+            for key, building in buildings.items()
+            if building.area > PUBLIC_PERIODIC_AREA_THRESHOLD
+        },
+        "from-60": {
+            key: building
+            for key, building in buildings.items()
+            if building.ownership_type == "direct"
+        },
+        "from-60-with-coowners": dict(buildings),
     }
-    current_labels = _labels_for_buildings(labels, current_buildings)
-    expanded_labels = _labels_for_buildings(labels, buildings)
-    current_quality = {
-        **quality,
-        "includedRows": len(current_buildings),
-        "inventoryBuildings": len(current_buildings),
-        "coOwnedBuildings": sum(
-            building.ownership_type == "co-owner"
-            for building in current_buildings.values()
-        ),
-    }
-    expanded_quality = {
-        **quality,
-        "includedRows": len(buildings),
-        "inventoryBuildings": len(buildings),
-        "coOwnedBuildings": sum(
-            building.ownership_type == "co-owner"
-            for building in buildings.values()
-        ),
-    }
-    if source_fallback_keys is not None:
-        current_quality["sourceLabelFallbackBuildings"] = len(
-            set(current_buildings) & source_fallback_keys
+    scope_assets = {
+        name: (
+            scoped_buildings,
+            _labels_for_buildings(labels, scoped_buildings),
         )
-        expanded_quality["sourceLabelFallbackBuildings"] = len(
-            set(buildings) & source_fallback_keys
+        for name, scoped_buildings in scope_buildings.items()
+    }
+
+    scope_dashboards: dict[str, dict[str, Any]] = {}
+    for name, (scoped_buildings, scoped_labels) in scope_assets.items():
+        scoped_quality = {
+            **quality,
+            "includedRows": len(scoped_buildings),
+            "inventoryBuildings": len(scoped_buildings),
+            "coOwnedBuildings": sum(
+                building.ownership_type == "co-owner"
+                for building in scoped_buildings.values()
+            ),
+        }
+        if source_fallback_keys is not None:
+            scoped_quality["sourceLabelFallbackBuildings"] = len(
+                set(scoped_buildings) & source_fallback_keys
+            )
+        scope_dashboards[name] = aggregate_labels(
+            municipalities=municipalities,
+            municipality_codes=municipality_codes,
+            labels=scoped_labels,
+            buildings=scoped_buildings,
+            as_of=as_of,
+            source_name=source_name,
+            quality=scoped_quality,
         )
 
-    dashboard = aggregate_labels(
-        municipalities=municipalities,
-        municipality_codes=municipality_codes,
-        labels=current_labels,
-        buildings=current_buildings,
-        as_of=as_of,
-        source_name=source_name,
-        quality=current_quality,
-    )
-    expanded_dashboard = aggregate_labels(
-        municipalities=municipalities,
-        municipality_codes=municipality_codes,
-        labels=expanded_labels,
-        buildings=buildings,
-        as_of=as_of,
-        source_name=source_name,
-        quality=expanded_quality,
-    )
-    dashboard["schemaVersion"] = 4
+    dashboard = scope_dashboards["current"]
+    dashboard["schemaVersion"] = 5
+    dashboard["coOwnedScope"] = {
+        **_scope_payload(scope_dashboards["with-coowners"]),
+        "includeCoOwners": True,
+    }
     dashboard["expandedAreaScope"] = {
+        **_scope_payload(scope_dashboards["from-60"]),
         "minimumArea": EXPANDED_PUBLIC_MINIMUM_AREA,
         "maximumAddedArea": PUBLIC_PERIODIC_AREA_THRESHOLD,
-        "totals": expanded_dashboard["totals"],
-        "totalsMissingLabel": expanded_dashboard["totalsMissingLabel"],
-        "municipalities": expanded_dashboard["municipalities"],
-        "companyAnalysis": expanded_dashboard["companyAnalysis"],
-        "quality": expanded_dashboard["quality"],
     }
-    dashboard["quality"]["expandedAreaScopeBuildings"] = len(buildings)
-    dashboard["quality"]["addedAreaScopeBuildings"] = (
-        len(buildings) - len(current_buildings)
+    dashboard["expandedAreaAndCoOwnedScope"] = {
+        **_scope_payload(scope_dashboards["from-60-with-coowners"]),
+        "minimumArea": EXPANDED_PUBLIC_MINIMUM_AREA,
+        "maximumAddedArea": PUBLIC_PERIODIC_AREA_THRESHOLD,
+        "includeCoOwners": True,
+    }
+    dashboard["quality"]["expandedAreaScopeBuildings"] = len(
+        scope_buildings["from-60"]
     )
-    return dashboard, current_buildings, current_labels
+    dashboard["quality"]["addedAreaScopeBuildings"] = (
+        len(scope_buildings["from-60"]) - len(scope_buildings["current"])
+    )
+    dashboard["quality"]["availableCoOwnedBuildings"] = len(
+        scope_buildings["with-coowners"]
+    ) - len(scope_buildings["current"])
+    return dashboard, scope_assets
 
 
-def _expanded_output_directory(path: Path) -> Path:
-    return path.with_name(f"{path.name}-from-60")
+def _scope_payload(dashboard: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "totals": dashboard["totals"],
+        "totalsMissingLabel": dashboard["totalsMissingLabel"],
+        "municipalities": dashboard["municipalities"],
+        "companyAnalysis": dashboard["companyAnalysis"],
+        "quality": dashboard["quality"],
+    }
+
+
+def _scoped_output_directory(path: Path, scope: str) -> Path:
+    return path if scope == "current" else path.with_name(f"{path.name}-{scope}")
 
 
 def _normalize_report_url(value: Any) -> str:
@@ -1036,7 +1066,7 @@ def import_workbook(
         "labelsWithMultipleMunicipalOwners": len(labels_with_multiple_owners),
         "unmatchedEnergyLabels": 0,
     }
-    dashboard, current_buildings, current_labels = _aggregate_area_scopes(
+    dashboard, scope_assets = _aggregate_dashboard_scopes(
         municipalities=municipalities,
         municipality_codes=primary_municipality_codes,
         labels=labels,
@@ -1046,32 +1076,23 @@ def import_workbook(
         quality=quality,
     )
     if export_dir:
-        write_building_exports(
-            export_dir,
-            municipalities,
-            current_buildings,
-            current_labels,
-            as_of,
-        )
-        write_building_exports(
-            _expanded_output_directory(export_dir),
-            municipalities,
-            buildings,
-            labels,
-            as_of,
-        )
+        for scope, (scoped_buildings, scoped_labels) in scope_assets.items():
+            write_building_exports(
+                _scoped_output_directory(export_dir, scope),
+                municipalities,
+                scoped_buildings,
+                scoped_labels,
+                as_of,
+            )
     if building_data_dir:
-        write_building_data(
-            building_data_dir,
-            municipalities, current_buildings, current_labels, as_of
-        )
-        write_building_data(
-            _expanded_output_directory(building_data_dir),
-            municipalities,
-            buildings,
-            labels,
-            as_of,
-        )
+        for scope, (scoped_buildings, scoped_labels) in scope_assets.items():
+            write_building_data(
+                _scoped_output_directory(building_data_dir, scope),
+                municipalities,
+                scoped_buildings,
+                scoped_labels,
+                as_of,
+            )
     write_dashboard(dashboard_path, dashboard)
     return dashboard
 
@@ -1254,14 +1275,23 @@ def write_dashboard(path: Path, dashboard: dict[str, Any]) -> None:
         raise ValueError(
             "Refusing to write data with fewer than 90 municipalities containing labels"
         )
-    expanded_scope = dashboard.get("expandedAreaScope")
-    if not expanded_scope:
-        raise ValueError("Refusing to write data without the expanded area scope")
-    if (
-        expanded_scope["quality"]["inventoryBuildings"]
-        < dashboard["quality"]["inventoryBuildings"]
-    ):
+    scope_names = (
+        "coOwnedScope",
+        "expandedAreaScope",
+        "expandedAreaAndCoOwnedScope",
+    )
+    if any(not dashboard.get(name) for name in scope_names):
+        raise ValueError("Refusing to write data without all dashboard scopes")
+    current_count = dashboard["quality"]["inventoryBuildings"]
+    if dashboard["coOwnedScope"]["quality"]["inventoryBuildings"] < current_count:
+        raise ValueError("Co-owner scope cannot contain fewer buildings")
+    if dashboard["expandedAreaScope"]["quality"]["inventoryBuildings"] < current_count:
         raise ValueError("Expanded area scope cannot contain fewer buildings")
+    if (
+        dashboard["expandedAreaAndCoOwnedScope"]["quality"]["inventoryBuildings"]
+        < dashboard["expandedAreaScope"]["quality"]["inventoryBuildings"]
+    ):
+        raise ValueError("Combined scope cannot contain fewer buildings")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(dashboard, ensure_ascii=False, indent=2) + "\n",
@@ -1460,7 +1490,7 @@ def update_from_emodata(
         "malformedEnergyLabels": malformed,
         "energyLabelCompaniesFound": len(company_names),
     }
-    dashboard, current_buildings, current_labels = _aggregate_area_scopes(
+    dashboard, scope_assets = _aggregate_dashboard_scopes(
         municipalities=municipalities,
         municipality_codes=municipality_codes,
         labels=labels,
@@ -1471,35 +1501,23 @@ def update_from_emodata(
         source_fallback_keys=source_fallback_keys,
     )
     if export_dir:
-        write_building_exports(
-            export_dir,
-            municipalities,
-            current_buildings,
-            current_labels,
-            as_of,
-        )
-        write_building_exports(
-            _expanded_output_directory(export_dir),
-            municipalities,
-            buildings,
-            labels,
-            as_of,
-        )
+        for scope, (scoped_buildings, scoped_labels) in scope_assets.items():
+            write_building_exports(
+                _scoped_output_directory(export_dir, scope),
+                municipalities,
+                scoped_buildings,
+                scoped_labels,
+                as_of,
+            )
     if building_data_dir:
-        write_building_data(
-            building_data_dir,
-            municipalities,
-            current_buildings,
-            current_labels,
-            as_of,
-        )
-        write_building_data(
-            _expanded_output_directory(building_data_dir),
-            municipalities,
-            buildings,
-            labels,
-            as_of,
-        )
+        for scope, (scoped_buildings, scoped_labels) in scope_assets.items():
+            write_building_data(
+                _scoped_output_directory(building_data_dir, scope),
+                municipalities,
+                scoped_buildings,
+                scoped_labels,
+                as_of,
+            )
     write_dashboard(dashboard_path, dashboard)
     return dashboard
 

@@ -36,6 +36,7 @@ type SortKey = 'name' | 'selected' | 'share' | 'valid' | 'expired' | 'unlabelled
 type TableMode = 'year' | 'expired' | 'unlabelled'
 type BuildingStatus = 'valid' | 'expired' | 'unlabelled'
 type BuildingFilter = 'all' | BuildingStatus | Year
+type ChartMetric = 'buildings' | 'area'
 type CompanyExpiry = Record<Bucket | 'later', number>
 
 type BuildingRecord = {
@@ -236,6 +237,7 @@ export default function App() {
   const [sortDescending, setSortDescending] = useState(true)
   const [selectedCvr, setSelectedCvr] = useState<string | null>(null)
   const [tableMode, setTableMode] = useState<TableMode>('year')
+  const [chartMetric, setChartMetric] = useState<ChartMetric>('buildings')
   const [buildingRows, setBuildingRows] = useState<BuildingRecord[]>([])
   const [buildingQuery, setBuildingQuery] = useState('')
   const [buildingCompanyFilter, setBuildingCompanyFilter] = useState('')
@@ -251,7 +253,8 @@ export default function App() {
   )
   const totals = dashboard.totals.buildings
   const selectedMunicipality = municipalities.find((row) => row.cvr === selectedCvr)
-  const chartMetrics = selectedMunicipality?.metrics.buildings ?? totals
+  const chartMetrics = selectedMunicipality?.metrics[chartMetric]
+    ?? dashboard.totals[chartMetric]
 
   useEffect(() => {
     if (!selectedCvr) {
@@ -431,6 +434,16 @@ export default function App() {
     (sum, row) => sum + unlabelledFor(row),
     0,
   )
+  const totalUnlabelledChartValue = municipalities.reduce(
+    (sum, row) => sum + row.unlabelled[chartMetric],
+    0,
+  )
+  const chartMetricLabel = chartMetric === 'buildings'
+    ? 'antal bygninger'
+    : 'samlet areal'
+  const formatChartValue = chartMetric === 'buildings'
+    ? formatBuildings
+    : formatArea
   const timelineData: Array<{
     name: string
     bucket: ChartBucket
@@ -446,17 +459,15 @@ export default function App() {
     {
       name: 'Udløbet',
       bucket: 'expired',
-      value: selectedMunicipality
-        ? expiredFor(selectedMunicipality)
-        : totals.expired,
+      value: chartMetrics.expired,
       color: tableMode === 'expired' ? '#0f172a' : '#ea580c',
     },
     {
       name: 'Mangler',
       bucket: 'unlabelled',
       value: selectedMunicipality
-        ? unlabelledFor(selectedMunicipality)
-        : totalUnlabelledBuildings,
+        ? selectedMunicipality.unlabelled[chartMetric]
+        : totalUnlabelledChartValue,
       color: tableMode === 'unlabelled' ? '#0f172a' : '#dc2626',
     },
   ]
@@ -609,8 +620,8 @@ export default function App() {
               </h2>
               <p className="mt-1 text-xs text-slate-500">
                 {selectedMunicipality
-                  ? 'Grafen viser kun den valgte kommune. Klik på et år, Udløbet eller Mangler.'
-                  : 'Klik på en kommune i tabellen for at vise dens bygninger i grafen.'}
+                  ? `Grafen viser ${chartMetricLabel} for den valgte kommune. Klik på et år, Udløbet eller Mangler.`
+                  : `Grafen viser ${chartMetricLabel} på tværs af kommunerne. Klik på en kommune i tabellen for at afgrænse grafen.`}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -624,6 +635,32 @@ export default function App() {
                   </Button>
                 </>
               )}
+              <div
+                className="inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5"
+                role="group"
+                aria-label="Vælg måleenhed for grafen"
+              >
+                {([
+                  ['buildings', 'Bygninger'],
+                  ['area', 'm²'],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setChartMetric(value)}
+                    aria-pressed={chartMetric === value}
+                    className={cn(
+                      'h-7 rounded px-2.5 text-xs font-semibold transition-colors',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
+                      chartMetric === value
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <div className="rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
                 Valgt: {selectedLabel}
               </div>
@@ -635,7 +672,7 @@ export default function App() {
               <XAxis dataKey="name" interval={0} fontSize={11} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} />
               <YAxis tickFormatter={(value) => compactFormat.format(Number(value))} width={54} fontSize={11} tickLine={false} axisLine={false} />
               <Tooltip
-                formatter={(value) => formatBuildings(Number(value))}
+                formatter={(value) => formatChartValue(Number(value))}
                 labelFormatter={(label) => label === 'Udløbet'
                   ? 'Udløbet mærke'
                   : label === 'Mangler'
@@ -644,7 +681,7 @@ export default function App() {
               />
               <Bar
                 dataKey="value"
-                name="Bygninger"
+                name={chartMetric === 'buildings' ? 'Bygninger' : 'Areal'}
                 radius={[5, 5, 0, 0]}
                 maxBarSize={72}
                 minPointSize={3}

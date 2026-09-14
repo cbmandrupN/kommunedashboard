@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import pipeline
 from pipeline import (
     Building,
-    _aggregate_area_scopes,
+    _aggregate_dashboard_scopes,
     _bucket,
     _eligibility_exclusion_reason,
     _municipality_coowner_cvrs,
@@ -130,12 +130,32 @@ class PipelineTests(unittest.TestCase):
             )
         )
 
-    def test_area_scopes_keep_current_threshold_and_add_small_buildings(self) -> None:
+    def test_area_and_ownership_scopes_are_independent(self) -> None:
         small = Building("1", "101", ("10",), "1", 60)
         large = Building("1", "101", ("20",), "2", 251)
+        coowned_large = Building(
+            "1",
+            "101",
+            ("30",),
+            "3",
+            300,
+            ownership_type="co-owner",
+            primary_owner="Region Test",
+        )
+        coowned_small = Building(
+            "1",
+            "101",
+            ("40",),
+            "4",
+            100,
+            ownership_type="co-owner",
+            primary_owner="Region Test",
+        )
         buildings = {
             ("1", "10", "1"): small,
             ("1", "20", "2"): large,
+            ("1", "30", "3"): coowned_large,
+            ("1", "40", "4"): coowned_small,
         }
         labels = {
             "EM1": {
@@ -146,9 +166,17 @@ class PipelineTests(unittest.TestCase):
                 "validTo": date(2027, 1, 2),
                 "owners": {"1": {("1", "20", "2"): large}},
             },
+            "EM3": {
+                "validTo": date(2027, 1, 3),
+                "owners": {"1": {("1", "30", "3"): coowned_large}},
+            },
+            "EM4": {
+                "validTo": date(2027, 1, 4),
+                "owners": {"1": {("1", "40", "4"): coowned_small}},
+            },
         }
 
-        dashboard, current_buildings, current_labels = _aggregate_area_scopes(
+        dashboard, scopes = _aggregate_dashboard_scopes(
             municipalities={"1": "Test Kommune"},
             municipality_codes={"1": "101"},
             labels=labels,
@@ -158,12 +186,20 @@ class PipelineTests(unittest.TestCase):
             quality={},
         )
 
-        self.assertEqual(set(current_buildings), {("1", "20", "2")})
-        self.assertEqual(set(current_labels), {"EM2"})
+        self.assertEqual(set(scopes["current"][0]), {("1", "20", "2")})
+        self.assertEqual(set(scopes["current"][1]), {"EM2"})
         self.assertEqual(dashboard["totals"]["buildings"]["2027"], 1)
         self.assertEqual(
             dashboard["expandedAreaScope"]["totals"]["buildings"]["2027"],
             2,
+        )
+        self.assertEqual(
+            dashboard["coOwnedScope"]["totals"]["buildings"]["2027"],
+            2,
+        )
+        self.assertEqual(
+            dashboard["expandedAreaAndCoOwnedScope"]["totals"]["buildings"]["2027"],
+            4,
         )
         self.assertEqual(dashboard["quality"]["inventoryBuildings"], 1)
         self.assertEqual(
@@ -171,6 +207,7 @@ class PipelineTests(unittest.TestCase):
             2,
         )
         self.assertEqual(dashboard["quality"]["addedAreaScopeBuildings"], 1)
+        self.assertEqual(dashboard["quality"]["availableCoOwnedBuildings"], 1)
 
     def test_company_lookup_parses_em_number_and_company(self) -> None:
         content = """
@@ -406,7 +443,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(municipality["validLabelBuildings"], 1)
         self.assertEqual(municipality["unlabelled"]["buildings"], 1)
         self.assertEqual(result["quality"]["sourceLabelFallbackBuildings"], 1)
-        self.assertEqual(result["schemaVersion"], 4)
+        self.assertEqual(result["schemaVersion"], 5)
         self.assertEqual(result["companyAnalysis"]["attributedReports"], 1)
         self.assertEqual(
             result["companyAnalysis"]["companies"][0]["name"],

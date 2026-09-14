@@ -38,6 +38,7 @@ type BuildingStatus = 'valid' | 'expired' | 'unlabelled'
 type BuildingFilter = 'all' | BuildingStatus | Year
 type ChartMetric = 'buildings' | 'area'
 type AreaScope = 'current' | 'from60'
+type OwnershipScope = 'direct' | 'withCoowners'
 type CompanyExpiry = Record<Bucket | 'later', number>
 
 type BuildingRecord = {
@@ -122,6 +123,7 @@ type DashboardScope = {
     noHeatingInstallationBuildings: number
     protectedBuildings: number
     coOwnedBuildings?: number
+    availableCoOwnedBuildings?: number
     expandedAreaScopeBuildings?: number
     addedAreaScopeBuildings?: number
     sourceLabelFallbackBuildings?: number
@@ -130,9 +132,10 @@ type DashboardScope = {
   }
 }
 
-type ExpandedAreaScope = DashboardScope & {
-  minimumArea: number
-  maximumAddedArea: number
+type DashboardScopeVariant = DashboardScope & {
+  minimumArea?: number
+  maximumAddedArea?: number
+  includeCoOwners?: boolean
 }
 
 type DashboardData = DashboardScope & {
@@ -141,7 +144,9 @@ type DashboardData = DashboardScope & {
   asOf: string
   source: string
   years: Year[]
-  expandedAreaScope?: ExpandedAreaScope
+  coOwnedScope?: DashboardScopeVariant
+  expandedAreaScope?: DashboardScopeVariant
+  expandedAreaAndCoOwnedScope?: DashboardScopeVariant
 }
 
 const dashboard = dashboardJson as DashboardData
@@ -224,15 +229,33 @@ function buildingMatchesFilter(building: BuildingRecord, filter: BuildingFilter)
 function downloadMunicipalityExport(
   municipality: Municipality,
   areaScope: AreaScope,
+  ownershipScope: OwnershipScope,
 ) {
   const anchor = document.createElement('a')
-  const directory = areaScope === 'from60' ? 'exports-from-60' : 'exports'
+  const directory = scopeDirectory('exports', areaScope, ownershipScope)
   anchor.href = `${import.meta.env.BASE_URL}${directory}/${municipality.cvr}.xlsx`
   anchor.download = `${municipality.name.toLocaleLowerCase('da-DK').replaceAll(' ', '-')}-bygninger.xlsx`
   anchor.click()
 }
 
-function downloadCsv(rows: Municipality[], areaScope: AreaScope) {
+function scopeDirectory(
+  base: 'buildings' | 'exports',
+  areaScope: AreaScope,
+  ownershipScope: OwnershipScope,
+) {
+  if (areaScope === 'from60' && ownershipScope === 'withCoowners') {
+    return `${base}-from-60-with-coowners`
+  }
+  if (areaScope === 'from60') return `${base}-from-60`
+  if (ownershipScope === 'withCoowners') return `${base}-with-coowners`
+  return base
+}
+
+function downloadCsv(
+  rows: Municipality[],
+  areaScope: AreaScope,
+  ownershipScope: OwnershipScope,
+) {
   const header = ['Kommune', 'CVR', 'Kommunekode', ...YEARS]
   const lines = rows.map((row) => [
     row.name,
@@ -245,7 +268,10 @@ function downloadCsv(rows: Municipality[], areaScope: AreaScope) {
   const anchor = document.createElement('a')
   anchor.href = url
   const scopeSuffix = areaScope === 'from60' ? '-fra-60-m2' : '-over-250-m2'
-  anchor.download = `udloebsplan-bygninger${scopeSuffix}-${dashboard.asOf}.csv`
+  const ownershipSuffix = ownershipScope === 'withCoowners'
+    ? '-med-medejerskab'
+    : '-direkte-ejerskab'
+  anchor.download = `udloebsplan-bygninger${scopeSuffix}${ownershipSuffix}-${dashboard.asOf}.csv`
   anchor.click()
   URL.revokeObjectURL(url)
 }
@@ -253,6 +279,7 @@ function downloadCsv(rows: Municipality[], areaScope: AreaScope) {
 export default function App() {
   const [horizon, setHorizon] = useState<Horizon>('2026')
   const [areaScope, setAreaScope] = useState<AreaScope>('current')
+  const [ownershipScope, setOwnershipScope] = useState<OwnershipScope>('direct')
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('selected')
   const [sortDescending, setSortDescending] = useState(true)
@@ -267,9 +294,17 @@ export default function App() {
   const [buildingLoading, setBuildingLoading] = useState(false)
   const [buildingError, setBuildingError] = useState<string | null>(null)
   const expandedAreaScope = dashboard.expandedAreaScope
-  const activeDashboard: DashboardScope = areaScope === 'from60' && expandedAreaScope
-    ? expandedAreaScope
-    : dashboard
+  const coOwnedScope = dashboard.coOwnedScope
+  const expandedAreaAndCoOwnedScope = dashboard.expandedAreaAndCoOwnedScope
+  const activeDashboard: DashboardScope = (
+    areaScope === 'from60' && ownershipScope === 'withCoowners'
+      ? expandedAreaAndCoOwnedScope
+      : areaScope === 'from60'
+        ? expandedAreaScope
+        : ownershipScope === 'withCoowners'
+          ? coOwnedScope
+          : dashboard
+  ) ?? dashboard
   const municipalities = activeDashboard.municipalities
   const companyAnalysis = activeDashboard.companyAnalysis
   const companies = companyAnalysis?.companies ?? EMPTY_COMPANIES
@@ -281,9 +316,11 @@ export default function App() {
   const selectedMunicipality = municipalities.find((row) => row.cvr === selectedCvr)
   const chartMetrics = selectedMunicipality?.metrics[chartMetric]
     ?? activeDashboard.totals[chartMetric]
-  const buildingDataDirectory = areaScope === 'from60'
-    ? 'buildings-from-60'
-    : 'buildings'
+  const buildingDataDirectory = scopeDirectory(
+    'buildings',
+    areaScope,
+    ownershipScope,
+  )
 
   useEffect(() => {
     if (!selectedCvr) {
@@ -323,7 +360,14 @@ export default function App() {
 
   useEffect(() => {
     setVisibleBuildingCount(BUILDING_PAGE_SIZE)
-  }, [areaScope, buildingCompanyFilter, buildingFilter, buildingQuery, selectedCvr])
+  }, [
+    areaScope,
+    buildingCompanyFilter,
+    buildingFilter,
+    buildingQuery,
+    ownershipScope,
+    selectedCvr,
+  ])
 
   useEffect(() => {
     if (companies.some((company) => company.name === selectedCompanyName)) return
@@ -540,6 +584,9 @@ export default function App() {
   const areaScopeLabel = areaScope === 'from60'
     ? 'Fra 60 m²'
     : 'Over 250 m²'
+  const ownershipScopeLabel = ownershipScope === 'withCoowners'
+    ? 'Direkte ejer og medejer'
+    : 'Kun direkte ejer'
   const addedAreaScopeBuildings = dashboard.quality.addedAreaScopeBuildings
     ?? Math.max(
       0,
@@ -590,7 +637,11 @@ export default function App() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => downloadCsv(filteredRows, areaScope)}
+                  onClick={() => downloadCsv(
+                    filteredRows,
+                    areaScope,
+                    ownershipScope,
+                  )}
                 >
                   <Download size={14} /> Eksportér plan
                 </Button>
@@ -600,48 +651,48 @@ export default function App() {
         </section>
 
         <section
-          className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
-          aria-labelledby="area-scope-title"
+          className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm lg:flex-row lg:items-center lg:justify-between"
+          aria-labelledby="scope-title"
         >
-          <div>
+          <div className="max-w-2xl">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 id="area-scope-title" className="text-sm font-semibold text-slate-950">
-                Arealgrænse
+              <h2 id="scope-title" className="text-sm font-semibold text-slate-950">
+                Afgrænsning
               </h2>
               <Badge color="amber">Muligt scenarie fra november</Badge>
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Sammenlign den nuværende screening med et ikke-gældende scenarie, der tilføjer{' '}
-              {numberFormat.format(addedAreaScopeBuildings)} bygninger på 60–250 m².
+              Tilvælg {numberFormat.format(addedAreaScopeBuildings)} direkte ejede bygninger
+              på 60–250 m² eller bygninger, hvor kommunen står som medejer.
             </p>
           </div>
-          <div
-            className="inline-flex w-fit rounded-lg border border-slate-200 bg-slate-100 p-1"
-            role="group"
-            aria-label="Vælg arealgrænse"
-          >
-            {([
-              ['current', 'Over 250 m²'],
-              ['from60', 'Fra 60 m²'],
-            ] as const).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setAreaScope(value)}
-                aria-pressed={areaScope === value}
-                disabled={value === 'from60' && !expandedAreaScope}
-                className={cn(
-                  'h-8 rounded-md px-3 text-xs font-semibold transition-colors',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
-                  'disabled:cursor-not-allowed disabled:opacity-50',
-                  areaScope === value
-                    ? 'bg-white text-slate-950 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-950',
-                )}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="flex flex-wrap gap-3">
+            <ScopeControl
+              label="Areal"
+              ariaLabel="Vælg arealgrænse"
+              value={areaScope}
+              options={[
+                ['current', 'Over 250 m²'],
+                ['from60', 'Fra 60 m²'],
+              ]}
+              onChange={(value) => setAreaScope(value as AreaScope)}
+              disabledValues={expandedAreaScope ? [] : ['from60']}
+            />
+            <ScopeControl
+              label="Ejerskab"
+              ariaLabel="Vælg ejerskab"
+              value={ownershipScope}
+              options={[
+                ['direct', 'Direkte ejer'],
+                ['withCoowners', 'Inkl. medejerskab'],
+              ]}
+              onChange={(value) => setOwnershipScope(value as OwnershipScope)}
+              disabledValues={
+                coOwnedScope && expandedAreaAndCoOwnedScope
+                  ? []
+                  : ['withCoowners']
+              }
+            />
           </div>
         </section>
 
@@ -694,7 +745,9 @@ export default function App() {
         </section>
 
         <Card className="border-blue-200 bg-blue-50/60 px-5 py-4 text-xs leading-5 text-blue-950">
-          <span className="font-semibold">Automatisk afgrænsning · {areaScopeLabel}:</span>{' '}
+          <span className="font-semibold">
+            Automatisk afgrænsning · {areaScopeLabel} · {ownershipScopeLabel}:
+          </span>{' '}
           {numberFormat.format(activeDashboard.quality.inventoryBuildings)} kommunale bygninger er medtaget.
           Anvendelseskoder, fredede bygninger og bygninger registreret uden varmeinstallation er frasorteret efter{' '}
           <a className="font-medium text-blue-700 underline" href="https://www.hbemo.dk/vejledning/faq/bekendtgoerelse-om-energimaerkning-af-bygninger" target="_blank" rel="noreferrer">HBEMO</a>
@@ -703,9 +756,9 @@ export default function App() {
           {activeDashboard.quality.sourceLabelFallbackBuildings
             ? ` For ${numberFormat.format(activeDashboard.quality.sourceLabelFallbackBuildings)} bygninger uden EMOData-match anvendes mærket fra det oprindelige kommunale udtræk.`
             : ''}
-          {' '}Både direkte kommunalt ejede bygninger og bygninger, hvor kommunen står som medejer, er medtaget.
+          {' '}Direkte kommunalt ejede bygninger er medtaget.
           {activeDashboard.quality.coOwnedBuildings
-            ? ` ${numberFormat.format(activeDashboard.quality.coOwnedBuildings)} bygninger er medtaget via et kommunalt medejerskab.`
+            ? ` Derudover er ${numberFormat.format(activeDashboard.quality.coOwnedBuildings)} bygninger medtaget via et kommunalt medejerskab.`
             : ''}
           {' '}Forhold som nedrivningshensigt, opvarmet delareal og mangler i klimaskærmen kræver manuel kontrol.
         </Card>
@@ -730,7 +783,11 @@ export default function App() {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => downloadMunicipalityExport(selectedMunicipality, areaScope)}
+                    onClick={() => downloadMunicipalityExport(
+                      selectedMunicipality,
+                      areaScope,
+                      ownershipScope,
+                    )}
                   >
                     <Download size={14} /> Hent Excel-udtræk
                   </Button>
@@ -1276,6 +1333,55 @@ export default function App() {
         <span>Kilde: kommunalt bygningsudtræk og EMOData</span>
         <span>Opgjort pr. {sourceDate}</span>
       </footer>
+    </div>
+  )
+}
+
+function ScopeControl({
+  label,
+  ariaLabel,
+  value,
+  options,
+  onChange,
+  disabledValues = [],
+}: {
+  label: string
+  ariaLabel: string
+  value: string
+  options: ReadonlyArray<readonly [string, string]>
+  onChange: (value: string) => void
+  disabledValues?: string[]
+}) {
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </div>
+      <div
+        className="inline-flex w-fit rounded-lg border border-slate-200 bg-slate-100 p-1"
+        role="group"
+        aria-label={ariaLabel}
+      >
+        {options.map(([optionValue, optionLabel]) => (
+          <button
+            key={optionValue}
+            type="button"
+            onClick={() => onChange(optionValue)}
+            aria-pressed={value === optionValue}
+            disabled={disabledValues.includes(optionValue)}
+            className={cn(
+              'h-8 rounded-md px-3 text-xs font-semibold transition-colors',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
+              'disabled:cursor-not-allowed disabled:opacity-50',
+              value === optionValue
+                ? 'bg-white text-slate-950 shadow-sm'
+                : 'text-slate-600 hover:text-slate-950',
+            )}
+          >
+            {optionLabel}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

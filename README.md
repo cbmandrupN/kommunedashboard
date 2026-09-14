@@ -24,7 +24,8 @@ bolig- og erhvervsareal, jf. § 19 i
 [lovbekendtgørelse nr. 1253 af 22. oktober 2025](https://www.retsinformation.dk/eli/lta/2025/1253).
 Dashboardets arealvælger kan desuden vise et foreløbigt scenarie fra 60 m², så bygninger
 på 60–250 m² kan indgå i planlægningen frem mod en mulig regelændring. Scenariet er ikke
-en angivelse af gældende ret.
+en angivelse af gældende ret. En separat ejerskabsvælger kan medtage bygninger, hvor
+kommunen står under øvrige ejere i kildedata. Begge valg kan slås til og fra uafhængigt.
 Følgende frasorteres automatisk:
 
 - BBR-anvendelseskoderne 211-219, 221-223, 229, 231-234, 239, 414, 510, 540, 585, 910, 920 og 930.
@@ -49,8 +50,9 @@ Ejerandele og øvrige råfelter offentliggøres ikke. En bygning medtages både,
 står som direkte ejer med sit eget CVR, og når kommunen er anført under øvrige ejere.
 Fællesejede bygninger kan derfor optræde hos mere end én kommune.
 Inventaret indeholder begge arealscenarier, mens de kommunevise filer skrives separat til
-`public/buildings`/`public/exports` og
-`public/buildings-from-60`/`public/exports-from-60`.
+`public/buildings`/`public/exports`, `public/buildings-from-60`/`public/exports-from-60`,
+`public/buildings-with-coowners`/`public/exports-with-coowners` og
+`public/buildings-from-60-with-coowners`/`public/exports-from-60-with-coowners`.
 
 Et nyt ejerudtræk importeres lokalt:
 

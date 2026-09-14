@@ -37,10 +37,13 @@ type TableMode = 'year' | 'expired' | 'unlabelled'
 type BuildingStatus = 'valid' | 'expired' | 'unlabelled'
 type BuildingFilter = 'all' | BuildingStatus | Year
 type ChartMetric = 'buildings' | 'area'
+type AreaScope = 'current' | 'from60'
 type CompanyExpiry = Record<Bucket | 'later', number>
 
 type BuildingRecord = {
   municipalityCode: string
+  ownershipType?: 'direct' | 'co-owner'
+  primaryOwner?: string
   address: string
   postalCode: string
   bfe: string
@@ -100,12 +103,7 @@ type CompanyAnalysis = {
   companies: CompanyRecord[]
 }
 
-type DashboardData = {
-  schemaVersion: number
-  generatedAt: string
-  asOf: string
-  source: string
-  years: Year[]
+type DashboardScope = {
   totals: {
     labels: Metric
     buildings: Metric
@@ -123,14 +121,31 @@ type DashboardData = {
     outsidePublicAreaThresholdBuildings: number
     noHeatingInstallationBuildings: number
     protectedBuildings: number
+    coOwnedBuildings?: number
+    expandedAreaScopeBuildings?: number
+    addedAreaScopeBuildings?: number
     sourceLabelFallbackBuildings?: number
     unmatchedEnergyLabels?: number
     unmatchedGeographicEnergyLabels?: number
   }
 }
 
+type ExpandedAreaScope = DashboardScope & {
+  minimumArea: number
+  maximumAddedArea: number
+}
+
+type DashboardData = DashboardScope & {
+  schemaVersion: number
+  generatedAt: string
+  asOf: string
+  source: string
+  years: Year[]
+  expandedAreaScope?: ExpandedAreaScope
+}
+
 const dashboard = dashboardJson as DashboardData
-const municipalities = dashboard.municipalities
+const EMPTY_COMPANIES: CompanyRecord[] = []
 const numberFormat = new Intl.NumberFormat('da-DK', { maximumFractionDigits: 0 })
 const compactFormat = new Intl.NumberFormat('da-DK', { notation: 'compact', maximumFractionDigits: 1 })
 const percentageFormat = new Intl.NumberFormat('da-DK', { style: 'percent', maximumFractionDigits: 1 })
@@ -206,14 +221,18 @@ function buildingMatchesFilter(building: BuildingRecord, filter: BuildingFilter)
   return building.status === 'valid' && building.validTo.startsWith(filter)
 }
 
-function downloadMunicipalityExport(municipality: Municipality) {
+function downloadMunicipalityExport(
+  municipality: Municipality,
+  areaScope: AreaScope,
+) {
   const anchor = document.createElement('a')
-  anchor.href = `${import.meta.env.BASE_URL}exports/${municipality.cvr}.xlsx`
+  const directory = areaScope === 'from60' ? 'exports-from-60' : 'exports'
+  anchor.href = `${import.meta.env.BASE_URL}${directory}/${municipality.cvr}.xlsx`
   anchor.download = `${municipality.name.toLocaleLowerCase('da-DK').replaceAll(' ', '-')}-bygninger.xlsx`
   anchor.click()
 }
 
-function downloadCsv(rows: Municipality[]) {
+function downloadCsv(rows: Municipality[], areaScope: AreaScope) {
   const header = ['Kommune', 'CVR', 'Kommunekode', ...YEARS]
   const lines = rows.map((row) => [
     row.name,
@@ -225,13 +244,15 @@ function downloadCsv(rows: Municipality[]) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `udloebsplan-bygninger-${dashboard.asOf}.csv`
+  const scopeSuffix = areaScope === 'from60' ? '-fra-60-m2' : '-over-250-m2'
+  anchor.download = `udloebsplan-bygninger${scopeSuffix}-${dashboard.asOf}.csv`
   anchor.click()
   URL.revokeObjectURL(url)
 }
 
 export default function App() {
   const [horizon, setHorizon] = useState<Horizon>('2026')
+  const [areaScope, setAreaScope] = useState<AreaScope>('current')
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('selected')
   const [sortDescending, setSortDescending] = useState(true)
@@ -245,16 +266,24 @@ export default function App() {
   const [visibleBuildingCount, setVisibleBuildingCount] = useState(BUILDING_PAGE_SIZE)
   const [buildingLoading, setBuildingLoading] = useState(false)
   const [buildingError, setBuildingError] = useState<string | null>(null)
-  const companyAnalysis = dashboard.companyAnalysis
-  const companies = companyAnalysis?.companies ?? []
+  const expandedAreaScope = dashboard.expandedAreaScope
+  const activeDashboard: DashboardScope = areaScope === 'from60' && expandedAreaScope
+    ? expandedAreaScope
+    : dashboard
+  const municipalities = activeDashboard.municipalities
+  const companyAnalysis = activeDashboard.companyAnalysis
+  const companies = companyAnalysis?.companies ?? EMPTY_COMPANIES
   const [companyQuery, setCompanyQuery] = useState('')
   const [selectedCompanyName, setSelectedCompanyName] = useState(
     companies[0]?.name ?? '',
   )
-  const totals = dashboard.totals.buildings
+  const totals = activeDashboard.totals.buildings
   const selectedMunicipality = municipalities.find((row) => row.cvr === selectedCvr)
   const chartMetrics = selectedMunicipality?.metrics[chartMetric]
-    ?? dashboard.totals[chartMetric]
+    ?? activeDashboard.totals[chartMetric]
+  const buildingDataDirectory = areaScope === 'from60'
+    ? 'buildings-from-60'
+    : 'buildings'
 
   useEffect(() => {
     if (!selectedCvr) {
@@ -268,7 +297,7 @@ export default function App() {
     setBuildingRows([])
     setBuildingLoading(true)
     setBuildingError(null)
-    fetch(`${import.meta.env.BASE_URL}buildings/${selectedCvr}.json`, {
+    fetch(`${import.meta.env.BASE_URL}${buildingDataDirectory}/${selectedCvr}.json`, {
       signal: controller.signal,
     })
       .then((response) => {
@@ -290,11 +319,16 @@ export default function App() {
       })
 
     return () => controller.abort()
-  }, [selectedCvr])
+  }, [buildingDataDirectory, selectedCvr])
 
   useEffect(() => {
     setVisibleBuildingCount(BUILDING_PAGE_SIZE)
-  }, [buildingCompanyFilter, buildingFilter, buildingQuery, selectedCvr])
+  }, [areaScope, buildingCompanyFilter, buildingFilter, buildingQuery, selectedCvr])
+
+  useEffect(() => {
+    if (companies.some((company) => company.name === selectedCompanyName)) return
+    setSelectedCompanyName(companies[0]?.name ?? '')
+  }, [companies, selectedCompanyName])
 
   const selectMunicipality = (cvr: string | null, companyName = '') => {
     setSelectedCvr(cvr)
@@ -349,7 +383,7 @@ export default function App() {
         if (sortKey === 'unlabelled') result = unlabelledFor(a) - unlabelledFor(b)
         return sortDescending ? -result : result
       })
-  }, [horizon, query, sortDescending, sortKey, tableMode])
+  }, [horizon, municipalities, query, sortDescending, sortKey, tableMode])
 
   const filteredBuildingRows = useMemo(() => {
     const normalizedQuery = buildingQuery.trim().toLocaleLowerCase('da-DK')
@@ -366,6 +400,7 @@ export default function App() {
         building.buildingNumber,
         building.energyLabel,
         building.companyName ?? '',
+        building.primaryOwner ?? '',
       ].some((value) => value.toLocaleLowerCase('da-DK').includes(normalizedQuery))
     })
   }, [buildingCompanyFilter, buildingFilter, buildingQuery, buildingRows])
@@ -482,7 +517,9 @@ export default function App() {
     (row) => unlabelledFor(row) > 0,
   ).length
   const nextPeak = YEARS.reduce((best, year) => (
-    dashboard.totals.buildings[year] > dashboard.totals.buildings[best] ? year : best
+    activeDashboard.totals.buildings[year] > activeDashboard.totals.buildings[best]
+      ? year
+      : best
   ), YEARS[0])
   const sourceDate = dateFormat.format(new Date(`${dashboard.asOf}T12:00:00`))
   const selectedLabel = tableMode === 'expired'
@@ -499,7 +536,16 @@ export default function App() {
     ? `${municipalitiesWithExpiredLabels} kommuner · ${formatBuildings(totals.expired)} · mærket er udløbet`
     : tableMode === 'unlabelled'
       ? `${municipalitiesWithoutLabels} kommuner · ${formatBuildings(totalUnlabelledBuildings)} · intet mærke fundet`
-      : `${affectedMunicipalities} kommuner · ${formatBuildings(totals[horizon])} · Andel af alle mærkningspligtige bygninger`
+      : `${affectedMunicipalities} kommuner · ${formatBuildings(totals[horizon])} · Andel af bygninger i det valgte scenarie`
+  const areaScopeLabel = areaScope === 'from60'
+    ? 'Fra 60 m²'
+    : 'Over 250 m²'
+  const addedAreaScopeBuildings = dashboard.quality.addedAreaScopeBuildings
+    ?? Math.max(
+      0,
+      (expandedAreaScope?.quality.inventoryBuildings ?? dashboard.quality.inventoryBuildings)
+        - dashboard.quality.inventoryBuildings,
+    )
 
   const setSort = (key: SortKey) => {
     if (sortKey === key) setSortDescending((value) => !value)
@@ -541,7 +587,11 @@ export default function App() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button variant="secondary" size="sm" onClick={() => downloadCsv(filteredRows)}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => downloadCsv(filteredRows, areaScope)}
+                >
                   <Download size={14} /> Eksportér plan
                 </Button>
               </div>
@@ -549,11 +599,57 @@ export default function App() {
           </div>
         </section>
 
+        <section
+          className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+          aria-labelledby="area-scope-title"
+        >
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id="area-scope-title" className="text-sm font-semibold text-slate-950">
+                Arealgrænse
+              </h2>
+              <Badge color="amber">Muligt scenarie fra november</Badge>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Sammenlign den nuværende screening med et ikke-gældende scenarie, der tilføjer{' '}
+              {numberFormat.format(addedAreaScopeBuildings)} bygninger på 60–250 m².
+            </p>
+          </div>
+          <div
+            className="inline-flex w-fit rounded-lg border border-slate-200 bg-slate-100 p-1"
+            role="group"
+            aria-label="Vælg arealgrænse"
+          >
+            {([
+              ['current', 'Over 250 m²'],
+              ['from60', 'Fra 60 m²'],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setAreaScope(value)}
+                aria-pressed={areaScope === value}
+                disabled={value === 'from60' && !expandedAreaScope}
+                className={cn(
+                  'h-8 rounded-md px-3 text-xs font-semibold transition-colors',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
+                  'disabled:cursor-not-allowed disabled:opacity-50',
+                  areaScope === value
+                    ? 'bg-white text-slate-950 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-950',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </section>
+
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløber i 2026"
-            value={formatBuildings(dashboard.totals.buildings['2026'])}
+            value={formatBuildings(activeDashboard.totals.buildings['2026'])}
             note={`${municipalities.filter((row) => row.metrics.buildings['2026'] > 0).length} kommuner`}
             tone="orange"
             active={tableMode === 'year' && horizon === '2026'}
@@ -562,7 +658,7 @@ export default function App() {
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløber i 2027"
-            value={formatBuildings(dashboard.totals.buildings['2027'])}
+            value={formatBuildings(activeDashboard.totals.buildings['2027'])}
             note={`${municipalities.filter((row) => row.metrics.buildings['2027'] > 0).length} kommuner`}
             tone="yellow"
             active={tableMode === 'year' && horizon === '2027'}
@@ -571,7 +667,7 @@ export default function App() {
           <DeadlineCard
             icon={<CheckCircle2 size={18} />}
             label="Største kommende år"
-            value={`${nextPeak} · ${numberFormat.format(dashboard.totals.buildings[nextPeak])}`}
+            value={`${nextPeak} · ${numberFormat.format(activeDashboard.totals.buildings[nextPeak])}`}
             note="bygninger, hvor energimærket udløber"
             tone="green"
             active={tableMode === 'year' && horizon === nextPeak}
@@ -597,15 +693,19 @@ export default function App() {
           />
         </section>
 
-        <Card className="border-blue-200 bg-blue-50/60 px-5 py-4 text-xs leading-5 text-slate-600">
-          <span className="font-semibold text-slate-800">Automatisk afgrænsning:</span>{' '}
-          {numberFormat.format(dashboard.quality.inventoryBuildings)} kommunale bygninger over 250 m² er medtaget.
+        <Card className="border-blue-200 bg-blue-50/60 px-5 py-4 text-xs leading-5 text-blue-950">
+          <span className="font-semibold">Automatisk afgrænsning · {areaScopeLabel}:</span>{' '}
+          {numberFormat.format(activeDashboard.quality.inventoryBuildings)} kommunale bygninger er medtaget.
           Anvendelseskoder, fredede bygninger og bygninger registreret uden varmeinstallation er frasorteret efter{' '}
           <a className="font-medium text-blue-700 underline" href="https://www.hbemo.dk/vejledning/faq/bekendtgoerelse-om-energimaerkning-af-bygninger" target="_blank" rel="noreferrer">HBEMO</a>
           {' '}og den gældende{' '}
           <a className="font-medium text-blue-700 underline" href="https://www.retsinformation.dk/eli/lta/2023/549" target="_blank" rel="noreferrer">bekendtgørelse</a>.
-          {dashboard.quality.sourceLabelFallbackBuildings
-            ? ` For ${numberFormat.format(dashboard.quality.sourceLabelFallbackBuildings)} bygninger uden EMOData-match anvendes mærket fra det oprindelige kommunale udtræk.`
+          {activeDashboard.quality.sourceLabelFallbackBuildings
+            ? ` For ${numberFormat.format(activeDashboard.quality.sourceLabelFallbackBuildings)} bygninger uden EMOData-match anvendes mærket fra det oprindelige kommunale udtræk.`
+            : ''}
+          {' '}Både direkte kommunalt ejede bygninger og bygninger, hvor kommunen står som medejer, er medtaget.
+          {activeDashboard.quality.coOwnedBuildings
+            ? ` ${numberFormat.format(activeDashboard.quality.coOwnedBuildings)} bygninger er medtaget via et kommunalt medejerskab.`
             : ''}
           {' '}Forhold som nedrivningshensigt, opvarmet delareal og mangler i klimaskærmen kræver manuel kontrol.
         </Card>
@@ -627,7 +727,11 @@ export default function App() {
             <div className="flex flex-wrap items-center gap-2">
               {selectedMunicipality && (
                 <>
-                  <Button variant="secondary" size="sm" onClick={() => downloadMunicipalityExport(selectedMunicipality)}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => downloadMunicipalityExport(selectedMunicipality, areaScope)}
+                  >
                     <Download size={14} /> Hent Excel-udtræk
                   </Button>
                   <Button variant="secondary" size="sm" onClick={() => selectMunicipality(null)}>
@@ -927,7 +1031,7 @@ export default function App() {
                 <Input
                   value={buildingQuery}
                   onChange={(event) => setBuildingQuery(event.target.value)}
-                  placeholder="Søg adresse, firma, BFE eller EM-nummer"
+                  placeholder="Søg adresse, ejer, firma, BFE eller EM-nummer"
                   className="w-full pl-9"
                 />
               </div>
@@ -1000,10 +1104,11 @@ export default function App() {
             {!buildingError && (
               <>
                 <div className="max-h-[620px] overflow-auto">
-                  <table className="min-w-[1250px]">
+                  <table className="min-w-[1400px]">
                     <thead>
                       <tr>
                         <th>Adresse</th>
+                        <th>Ejerskab</th>
                         <th>Status</th>
                         <th>Gyldig til</th>
                         <th>EM-nummer</th>
@@ -1026,6 +1131,18 @@ export default function App() {
                               <div className="text-[11px] text-slate-400">
                                 {building.postalCode || 'Postnr. ikke oplyst'}
                               </div>
+                            </td>
+                            <td>
+                              {building.ownershipType === 'co-owner' ? (
+                                <>
+                                  <Badge color="blue">Medejer</Badge>
+                                  <div className="mt-1 max-w-44 text-[11px] leading-4 text-slate-500">
+                                    Primær ejer: {building.primaryOwner || 'ikke oplyst'}
+                                  </div>
+                                </>
+                              ) : (
+                                <span className="text-xs text-slate-500">Direkte ejer</span>
+                              )}
                             </td>
                             <td><BuildingStatusBadge status={building.status} /></td>
                             <td className="whitespace-nowrap text-slate-600">

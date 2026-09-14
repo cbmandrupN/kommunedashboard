@@ -19,15 +19,18 @@ Dashboardet tæller bygninger, hvor energimærket udløber, og viser deres udlø
 også bygninger, der mangler et gyldigt mærke: bygninger uden et fundet mærke plus bygninger
 med et udløbet mærke.
 
-Inventaret er afgrænset til kommunalt ejede bygninger med mere end 250 m² samlet bolig- og
-erhvervsareal, jf. § 19 i
+Standardvisningen er afgrænset til kommunalt ejede bygninger med mere end 250 m² samlet
+bolig- og erhvervsareal, jf. § 19 i
 [lovbekendtgørelse nr. 1253 af 22. oktober 2025](https://www.retsinformation.dk/eli/lta/2025/1253).
+Dashboardets arealvælger kan desuden vise et foreløbigt scenarie fra 60 m², så bygninger
+på 60–250 m² kan indgå i planlægningen frem mod en mulig regelændring. Scenariet er ikke
+en angivelse af gældende ret.
 Følgende frasorteres automatisk:
 
 - BBR-anvendelseskoderne 211-219, 221-223, 229, 231-234, 239, 414, 510, 540, 585, 910, 920 og 930.
 - Bygninger markeret som fredede.
 - Bygninger registreret uden varmeinstallation.
-- Bygninger på 250 m² eller derunder, som ikke er omfattet af den regelmæssige mærkningspligt for offentlige bygninger.
+- Bygninger under den valgte arealgrænse.
 
 Reglerne følger §§ 3-5 i
 [bekendtgørelse nr. 549 af 15. maj 2023](https://www.retsinformation.dk/eli/lta/2023/549)
@@ -39,9 +42,15 @@ Nedrivningshensigt, opvarmet areal under 60 m²/højst 25 %, væsentlige mangler
 eller klimaskærm og andre konkrete undtagelser kan ikke afgøres af udtrækket og kræver manuel
 kontrol. Overblikket er derfor et screeningsværktøj og ikke en juridisk afgørelse.
 
-Den reducerede
-`data/municipality-inventory.json.gz` indeholder kun kommune, CVR, kommunekode, BFE,
-bygningsnummer og areal. Adresser og øvrige råfelter offentliggøres ikke.
+Den komprimerede `data/municipality-inventory.json.gz` indeholder kun de felter, der skal
+bruges til matchning og udtræk: kommune, CVR, kommunekode, BFE, bygningsnummer, areal,
+adresse, ejerskabstype, primær ejer samt kildens seneste EM-nummer og udløbsdato.
+Ejerandele og øvrige råfelter offentliggøres ikke. En bygning medtages både, når kommunen
+står som direkte ejer med sit eget CVR, og når kommunen er anført under øvrige ejere.
+Fællesejede bygninger kan derfor optræde hos mere end én kommune.
+Inventaret indeholder begge arealscenarier, mens de kommunevise filer skrives separat til
+`public/buildings`/`public/exports` og
+`public/buildings-from-60`/`public/exports-from-60`.
 
 Et nyt ejerudtræk importeres lokalt:
 

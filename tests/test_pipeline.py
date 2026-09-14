@@ -17,8 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import pipeline
 from pipeline import (
     Building,
+    _aggregate_area_scopes,
     _bucket,
     _eligibility_exclusion_reason,
+    _municipality_coowner_cvrs,
     _parse_emodata_date,
     _split_values,
     aggregate_labels,
@@ -52,7 +54,31 @@ class PipelineTests(unittest.TestCase):
             "EM123",
             date(2030, 1, 2),
         )
-        self.assertEqual(building.compact()[8:], ["EM123", "2030-01-02"])
+        self.assertEqual(
+            building.compact()[8:],
+            ["EM123", "2030-01-02", "direct", ""],
+        )
+
+    def test_municipality_coowners_match_mojibake_and_multiple_owners(self) -> None:
+        municipalities = {
+            "1": "Morsø Kommune",
+            "2": "Lemvig Kommune",
+            "3": "Holstebro Kommune",
+        }
+        self.assertEqual(
+            _municipality_coowner_cvrs(
+                "Region Nordjylland (001), Mors\ufffd Kommune (000)",
+                municipalities,
+            ),
+            ("1",),
+        )
+        self.assertEqual(
+            _municipality_coowner_cvrs(
+                "Lemvig Kommune (001), Holstebro Kommune (000)",
+                municipalities,
+            ),
+            ("2", "3"),
+        )
 
     def test_emodata_date_formats(self) -> None:
         self.assertEqual(_parse_emodata_date("04-01-2017"), date(2017, 1, 4))
@@ -84,6 +110,67 @@ class PipelineTests(unittest.TestCase):
         self.assertIsNone(
             _eligibility_exclusion_reason("110", 251, False, "Fjernvarme")
         )
+        self.assertEqual(
+            _eligibility_exclusion_reason(
+                "110",
+                59,
+                False,
+                "Fjernvarme",
+                minimum_area=60,
+            ),
+            "outsidePublicAreaThresholdBuildings",
+        )
+        self.assertIsNone(
+            _eligibility_exclusion_reason(
+                "110",
+                60,
+                False,
+                "Fjernvarme",
+                minimum_area=60,
+            )
+        )
+
+    def test_area_scopes_keep_current_threshold_and_add_small_buildings(self) -> None:
+        small = Building("1", "101", ("10",), "1", 60)
+        large = Building("1", "101", ("20",), "2", 251)
+        buildings = {
+            ("1", "10", "1"): small,
+            ("1", "20", "2"): large,
+        }
+        labels = {
+            "EM1": {
+                "validTo": date(2027, 1, 1),
+                "owners": {"1": {("1", "10", "1"): small}},
+            },
+            "EM2": {
+                "validTo": date(2027, 1, 2),
+                "owners": {"1": {("1", "20", "2"): large}},
+            },
+        }
+
+        dashboard, current_buildings, current_labels = _aggregate_area_scopes(
+            municipalities={"1": "Test Kommune"},
+            municipality_codes={"1": "101"},
+            labels=labels,
+            buildings=buildings,
+            as_of=date(2026, 9, 4),
+            source_name="fixture",
+            quality={},
+        )
+
+        self.assertEqual(set(current_buildings), {("1", "20", "2")})
+        self.assertEqual(set(current_labels), {"EM2"})
+        self.assertEqual(dashboard["totals"]["buildings"]["2027"], 1)
+        self.assertEqual(
+            dashboard["expandedAreaScope"]["totals"]["buildings"]["2027"],
+            2,
+        )
+        self.assertEqual(dashboard["quality"]["inventoryBuildings"], 1)
+        self.assertEqual(
+            dashboard["expandedAreaScope"]["quality"]["inventoryBuildings"],
+            2,
+        )
+        self.assertEqual(dashboard["quality"]["addedAreaScopeBuildings"], 1)
 
     def test_company_lookup_parses_em_number_and_company(self) -> None:
         content = """
@@ -276,11 +363,11 @@ class PipelineTests(unittest.TestCase):
             "101",
             ("10",),
             "1",
-            100,
+            300,
             source_energy_label="EM-SOURCE",
             source_valid_to=date(2030, 1, 1),
         )
-        unlabelled = Building("1", "101", ("20",), "2", 200)
+        unlabelled = Building("1", "101", ("20",), "2", 400)
         inventory = {
             "quality": {},
             "municipalities": [
@@ -319,7 +406,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(municipality["validLabelBuildings"], 1)
         self.assertEqual(municipality["unlabelled"]["buildings"], 1)
         self.assertEqual(result["quality"]["sourceLabelFallbackBuildings"], 1)
-        self.assertEqual(result["schemaVersion"], 3)
+        self.assertEqual(result["schemaVersion"], 4)
         self.assertEqual(result["companyAnalysis"]["attributedReports"], 1)
         self.assertEqual(
             result["companyAnalysis"]["companies"][0]["name"],
@@ -414,6 +501,8 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("Mangler energimærke", worksheet)
             self.assertIn("BFE-nummer", worksheet)
             self.assertIn("Energimærkningsfirma", worksheet)
+            self.assertIn("Ejerskab", worksheet)
+            self.assertIn("Primær registreret ejer", worksheet)
             self.assertIn("Adresse", worksheet)
             self.assertIn("Testvej 12A", worksheet)
             self.assertIn("Postnr.", worksheet)

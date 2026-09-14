@@ -38,6 +38,7 @@ ENERGY_LABEL_COMPANY_BATCH_SIZE = 3000
 YEARS = tuple(str(year) for year in range(2026, 2038))
 BUCKETS = ("expired", *YEARS)
 PUBLIC_PERIODIC_AREA_THRESHOLD = 250
+EXPANDED_PUBLIC_MINIMUM_AREA = 60
 EXEMPT_USE_CODES = frozenset(
     {
         *(str(code) for code in range(211, 220)),
@@ -73,6 +74,8 @@ class Building:
     postal_code: str = ""
     source_energy_label: str = ""
     source_valid_to: date | None = None
+    ownership_type: str = "direct"
+    primary_owner: str = ""
 
     def compact(self) -> list[Any]:
         return [
@@ -86,6 +89,8 @@ class Building:
             self.postal_code,
             self.source_energy_label,
             self.source_valid_to.isoformat() if self.source_valid_to else "",
+            self.ownership_type,
+            self.primary_owner,
         ]
 
 
@@ -146,6 +151,31 @@ def _find_column(row: dict[str, str], expected: str) -> str:
         if normalized == candidate or normalized in candidate:
             return key
     raise KeyError(f"Missing required column: {expected}")
+
+
+def _owner_match_text(value: str) -> str:
+    normalized = value.casefold()
+    for character in ("æ", "ø", "å", "\ufffd"):
+        normalized = normalized.replace(character, "?")
+    return " ".join(normalized.split())
+
+
+def _municipality_coowner_cvrs(
+    other_owners: str,
+    municipalities: dict[str, str],
+) -> tuple[str, ...]:
+    normalized_owners = _owner_match_text(other_owners)
+    if not normalized_owners:
+        return ()
+    return tuple(
+        cvr
+        for cvr, municipality_name in municipalities.items()
+        if re.search(
+            rf"(?<!\w){re.escape(_owner_match_text(municipality_name))}"
+            r"\s+\(\d+\)",
+            normalized_owners,
+        )
+    )
 
 
 def _excel_date(value: str) -> date:
@@ -493,6 +523,12 @@ def write_building_exports(
             [
                 municipality_name,
                 cvr,
+                (
+                    "Medejer"
+                    if record["ownershipType"] == "co-owner"
+                    else "Direkte ejer"
+                ),
+                record["primaryOwner"],
                 record["municipalityCode"],
                 record["address"],
                 record["postalCode"],
@@ -517,6 +553,8 @@ def write_building_exports(
                 [
                     "Kommune",
                     "CVR",
+                    "Ejerskab",
+                    "Primær registreret ejer",
                     "Geografisk kommunekode",
                     "Adresse",
                     "Postnr.",
@@ -575,6 +613,8 @@ def _building_records_by_cvr(
         records_by_cvr[building.cvr].append(
             {
                 "municipalityCode": building.municipality_code,
+                "ownershipType": building.ownership_type,
+                "primaryOwner": building.primary_owner,
                 "address": " ".join(
                     part for part in (building.street, building.house_number) if part
                 ),
@@ -632,16 +672,128 @@ def _eligibility_exclusion_reason(
     area: int,
     protected: bool,
     heating: str,
+    minimum_area: int = PUBLIC_PERIODIC_AREA_THRESHOLD + 1,
 ) -> str | None:
     if use_code in EXEMPT_USE_CODES:
         return "exemptUseCodeBuildings"
     if protected:
         return "protectedBuildings"
-    if area <= PUBLIC_PERIODIC_AREA_THRESHOLD:
+    if area < minimum_area:
         return "outsidePublicAreaThresholdBuildings"
     if heating.strip().casefold() == "ingen varmeinstallation":
         return "noHeatingInstallationBuildings"
     return None
+
+
+def _labels_for_buildings(
+    labels: dict[str, dict[str, Any]],
+    buildings: dict[tuple[str, str, str], Building],
+) -> dict[str, dict[str, Any]]:
+    building_keys = set(buildings)
+    scoped_labels: dict[str, dict[str, Any]] = {}
+    for serial, entry in labels.items():
+        owners = {
+            cvr: {
+                key: building
+                for key, building in owner_buildings.items()
+                if key in building_keys
+            }
+            for cvr, owner_buildings in entry["owners"].items()
+        }
+        owners = {
+            cvr: owner_buildings
+            for cvr, owner_buildings in owners.items()
+            if owner_buildings
+        }
+        if owners:
+            scoped_labels[serial] = {**entry, "owners": owners}
+    return scoped_labels
+
+
+def _aggregate_area_scopes(
+    municipalities: dict[str, str],
+    municipality_codes: dict[str, str],
+    labels: dict[str, dict[str, Any]],
+    buildings: dict[tuple[str, str, str], Building],
+    as_of: date,
+    source_name: str,
+    quality: dict[str, int],
+    source_fallback_keys: set[tuple[str, str, str]] | None = None,
+) -> tuple[
+    dict[str, Any],
+    dict[tuple[str, str, str], Building],
+    dict[str, dict[str, Any]],
+]:
+    current_buildings = {
+        key: building
+        for key, building in buildings.items()
+        if building.area > PUBLIC_PERIODIC_AREA_THRESHOLD
+    }
+    current_labels = _labels_for_buildings(labels, current_buildings)
+    expanded_labels = _labels_for_buildings(labels, buildings)
+    current_quality = {
+        **quality,
+        "includedRows": len(current_buildings),
+        "inventoryBuildings": len(current_buildings),
+        "coOwnedBuildings": sum(
+            building.ownership_type == "co-owner"
+            for building in current_buildings.values()
+        ),
+    }
+    expanded_quality = {
+        **quality,
+        "includedRows": len(buildings),
+        "inventoryBuildings": len(buildings),
+        "coOwnedBuildings": sum(
+            building.ownership_type == "co-owner"
+            for building in buildings.values()
+        ),
+    }
+    if source_fallback_keys is not None:
+        current_quality["sourceLabelFallbackBuildings"] = len(
+            set(current_buildings) & source_fallback_keys
+        )
+        expanded_quality["sourceLabelFallbackBuildings"] = len(
+            set(buildings) & source_fallback_keys
+        )
+
+    dashboard = aggregate_labels(
+        municipalities=municipalities,
+        municipality_codes=municipality_codes,
+        labels=current_labels,
+        buildings=current_buildings,
+        as_of=as_of,
+        source_name=source_name,
+        quality=current_quality,
+    )
+    expanded_dashboard = aggregate_labels(
+        municipalities=municipalities,
+        municipality_codes=municipality_codes,
+        labels=expanded_labels,
+        buildings=buildings,
+        as_of=as_of,
+        source_name=source_name,
+        quality=expanded_quality,
+    )
+    dashboard["schemaVersion"] = 4
+    dashboard["expandedAreaScope"] = {
+        "minimumArea": EXPANDED_PUBLIC_MINIMUM_AREA,
+        "maximumAddedArea": PUBLIC_PERIODIC_AREA_THRESHOLD,
+        "totals": expanded_dashboard["totals"],
+        "totalsMissingLabel": expanded_dashboard["totalsMissingLabel"],
+        "municipalities": expanded_dashboard["municipalities"],
+        "companyAnalysis": expanded_dashboard["companyAnalysis"],
+        "quality": expanded_dashboard["quality"],
+    }
+    dashboard["quality"]["expandedAreaScopeBuildings"] = len(buildings)
+    dashboard["quality"]["addedAreaScopeBuildings"] = (
+        len(buildings) - len(current_buildings)
+    )
+    return dashboard, current_buildings, current_labels
+
+
+def _expanded_output_directory(path: Path) -> Path:
+    return path.with_name(f"{path.name}-from-60")
 
 
 def _normalize_report_url(value: Any) -> str:
@@ -712,15 +864,21 @@ def import_workbook(
     municipal_rows = 0
     included_rows = 0
     duplicate_buildings = 0
+    coowned_rows = 0
     labels_with_multiple_owners: set[str] = set()
 
     for row in iter_xlsx_rows(workbook):
         rows_seen += 1
-        cvr = row.get(_find_column(row, "CVR"), "").strip()
-        if cvr not in municipalities:
+        primary_cvr = row.get(_find_column(row, "CVR"), "").strip()
+        other_owners = row.get(_find_column(row, "vrige ejere"), "").strip()
+        owner_cvrs = set(_municipality_coowner_cvrs(other_owners, municipalities))
+        if primary_cvr in municipalities:
+            owner_cvrs.add(primary_cvr)
+        if not owner_cvrs:
             continue
 
-        municipal_rows += 1
+        municipal_rows += len(owner_cvrs)
+        coowned_rows += sum(cvr != primary_cvr for cvr in owner_cvrs)
         municipality_code = row.get(_find_column(row, "Kommunenr"), "").strip()
         sfe = row.get(_find_column(row, "SFE-nummer"), "").strip()
         building_number = row.get(_find_column(row, "Bygningsnummer"), "").strip()
@@ -734,10 +892,18 @@ def import_workbook(
         energy_label = row.get(_find_column(row, "EM-nr"), "").strip()
         valid_to_raw = row.get(_find_column(row, "Gyldig til"), "").strip()
         source_valid_to = _excel_date(valid_to_raw) if valid_to_raw else None
-        building_key = (cvr, sfe or "|".join(bfe_values), building_number)
-        first_source_occurrence = building_key not in source_building_keys
-        source_building_keys.add(building_key)
-        municipality_code_counts[cvr][municipality_code] += 1
+        primary_owner = row.get(_find_column(row, "Ejer"), "").strip()
+        row_building_keys = {
+            cvr: (cvr, sfe or "|".join(bfe_values), building_number)
+            for cvr in owner_cvrs
+        }
+        first_source_occurrences = {
+            cvr: building_key not in source_building_keys
+            for cvr, building_key in row_building_keys.items()
+        }
+        source_building_keys.update(row_building_keys.values())
+        for cvr in owner_cvrs:
+            municipality_code_counts[cvr][municipality_code] += 1
 
         use_code = row.get(_find_column(row, "Anvendelskode"), "").strip()
         protected_value = row.get(_find_column(row, "Fredet bygning"), "").strip()
@@ -748,43 +914,48 @@ def import_workbook(
             area,
             protected,
             heating,
+            EXPANDED_PUBLIC_MINIMUM_AREA,
         )
         if exclusion_reason:
-            if first_source_occurrence:
-                exclusion_counts[exclusion_reason] += 1
+            exclusion_counts[exclusion_reason] += sum(
+                first_source_occurrences.values()
+            )
             continue
 
-        included_rows += 1
-        building = Building(
-            cvr,
-            municipality_code,
-            bfe_values,
-            building_number,
-            area,
-            street,
-            house_number,
-            postal_code,
-            energy_label,
-            source_valid_to,
-        )
-        if building_key in buildings:
-            duplicate_buildings += 1
-        else:
-            buildings[building_key] = building
+        included_rows += len(owner_cvrs)
+        for cvr, building_key in row_building_keys.items():
+            building = Building(
+                cvr,
+                municipality_code,
+                bfe_values,
+                building_number,
+                area,
+                street,
+                house_number,
+                postal_code,
+                energy_label,
+                source_valid_to,
+                "direct" if cvr == primary_cvr else "co-owner",
+                primary_owner,
+            )
+            if building_key in buildings:
+                duplicate_buildings += 1
+            else:
+                buildings[building_key] = building
 
-        if not energy_label or source_valid_to is None:
-            continue
+            if not energy_label or source_valid_to is None:
+                continue
 
-        entry = labels.setdefault(
-            energy_label,
-            {"validTo": source_valid_to, "owners": defaultdict(dict)},
-        )
-        if entry["validTo"] != source_valid_to:
-            entry["validTo"] = max(entry["validTo"], source_valid_to)
-        owner_buildings = entry["owners"][cvr]
-        owner_buildings[building_key] = building
-        if len(entry["owners"]) > 1:
-            labels_with_multiple_owners.add(energy_label)
+            entry = labels.setdefault(
+                energy_label,
+                {"validTo": source_valid_to, "owners": defaultdict(dict)},
+            )
+            if entry["validTo"] != source_valid_to:
+                entry["validTo"] = max(entry["validTo"], source_valid_to)
+            owner_buildings = entry["owners"][cvr]
+            owner_buildings[building_key] = building
+            if len(entry["owners"]) > 1:
+                labels_with_multiple_owners.add(energy_label)
 
     missing_cvrs = sorted(set(municipalities) - set(municipality_code_counts))
     if missing_cvrs:
@@ -795,17 +966,31 @@ def import_workbook(
     }
 
     inventory = {
-        "schemaVersion": 4,
+        "schemaVersion": 5,
         "generatedAt": datetime.now(UTC).isoformat(),
         "source": workbook.name,
         "quality": {
             "sourceRows": rows_seen,
             "municipalityOwnedRows": municipal_rows,
+            "municipalCoOwnedRows": coowned_rows,
             "municipalInventoryBuildings": len(source_building_keys),
             "includedRows": included_rows,
             "inventoryBuildings": len(buildings),
             "duplicateBuildingRows": duplicate_buildings,
             **exclusion_counts,
+            "outsideExpandedAreaThresholdBuildings": exclusion_counts.get(
+                "outsidePublicAreaThresholdBuildings",
+                0,
+            ),
+            "outsidePublicAreaThresholdBuildings": sum(
+                building.area <= PUBLIC_PERIODIC_AREA_THRESHOLD
+                for building in buildings.values()
+            ),
+            "expandedAreaScopeBuildings": len(buildings),
+            "addedAreaScopeBuildings": sum(
+                building.area <= PUBLIC_PERIODIC_AREA_THRESHOLD
+                for building in buildings.values()
+            ),
         },
         "municipalities": [
             {
@@ -833,30 +1018,55 @@ def import_workbook(
     with gzip.open(inventory_path, "wt", encoding="utf-8") as output:
         json.dump(inventory, output, ensure_ascii=False, separators=(",", ":"))
 
-    dashboard = aggregate_labels(
+    quality = {
+        "sourceRows": rows_seen,
+        "municipalityOwnedRows": municipal_rows,
+        "municipalCoOwnedRows": coowned_rows,
+        "municipalInventoryBuildings": len(source_building_keys),
+        "duplicateBuildingRows": duplicate_buildings,
+        **exclusion_counts,
+        "outsideExpandedAreaThresholdBuildings": exclusion_counts.get(
+            "outsidePublicAreaThresholdBuildings",
+            0,
+        ),
+        "outsidePublicAreaThresholdBuildings": sum(
+            building.area <= PUBLIC_PERIODIC_AREA_THRESHOLD
+            for building in buildings.values()
+        ),
+        "labelsWithMultipleMunicipalOwners": len(labels_with_multiple_owners),
+        "unmatchedEnergyLabels": 0,
+    }
+    dashboard, current_buildings, current_labels = _aggregate_area_scopes(
         municipalities=municipalities,
         municipality_codes=primary_municipality_codes,
         labels=labels,
         buildings=buildings,
         as_of=as_of,
         source_name=re.sub(r"^[0-9a-fA-F-]{36}-", "", workbook.name),
-        quality={
-            "sourceRows": rows_seen,
-            "municipalityOwnedRows": municipal_rows,
-            "municipalInventoryBuildings": len(source_building_keys),
-            "includedRows": included_rows,
-            "inventoryBuildings": len(buildings),
-            "duplicateBuildingRows": duplicate_buildings,
-            **exclusion_counts,
-            "labelsWithMultipleMunicipalOwners": len(labels_with_multiple_owners),
-            "unmatchedEnergyLabels": 0,
-        },
+        quality=quality,
     )
     if export_dir:
-        write_building_exports(export_dir, municipalities, buildings, labels, as_of)
+        write_building_exports(
+            export_dir,
+            municipalities,
+            current_buildings,
+            current_labels,
+            as_of,
+        )
+        write_building_exports(
+            _expanded_output_directory(export_dir),
+            municipalities,
+            buildings,
+            labels,
+            as_of,
+        )
     if building_data_dir:
         write_building_data(
             building_data_dir,
+            municipalities, current_buildings, current_labels, as_of
+        )
+        write_building_data(
+            _expanded_output_directory(building_data_dir),
             municipalities,
             buildings,
             labels,
@@ -1044,6 +1254,14 @@ def write_dashboard(path: Path, dashboard: dict[str, Any]) -> None:
         raise ValueError(
             "Refusing to write data with fewer than 90 municipalities containing labels"
         )
+    expanded_scope = dashboard.get("expandedAreaScope")
+    if not expanded_scope:
+        raise ValueError("Refusing to write data without the expanded area scope")
+    if (
+        expanded_scope["quality"]["inventoryBuildings"]
+        < dashboard["quality"]["inventoryBuildings"]
+    ):
+        raise ValueError("Expanded area scope cannot contain fewer buildings")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(dashboard, ensure_ascii=False, indent=2) + "\n",
@@ -1115,6 +1333,12 @@ def update_from_emodata(
                 if len(compact) > 9 and compact[9]
                 else None
             ),
+            ownership_type=(
+                str(compact[10])
+                if len(compact) > 10 and compact[10]
+                else "direct"
+            ),
+            primary_owner=str(compact[11]) if len(compact) > 11 else "",
         )
         key = (building.cvr, "|".join(building.bfes), building.building_number)
         buildings[key] = building
@@ -1221,35 +1445,56 @@ def update_from_emodata(
             entry["reportUrl"] = report_url
         entry["owners"][building.cvr][key] = building
 
-    dashboard = aggregate_labels(
+    source_fallback_keys = (
+        source_label_building_keys - emodata_matched_building_keys
+    )
+    quality = {
+        **inventory.get("quality", {}),
+        "labelsWithMultipleMunicipalOwners": sum(
+            len(entry["owners"]) > 1 for entry in labels.values()
+        ),
+        "geographicEnergyLabelsReturned": returned,
+        "matchedEnergyLabelCandidates": matched_candidates,
+        "sourceLabelFallbackBuildings": len(source_fallback_keys),
+        "unmatchedGeographicEnergyLabels": unmatched,
+        "malformedEnergyLabels": malformed,
+        "energyLabelCompaniesFound": len(company_names),
+    }
+    dashboard, current_buildings, current_labels = _aggregate_area_scopes(
         municipalities=municipalities,
         municipality_codes=municipality_codes,
         labels=labels,
         buildings=buildings,
         as_of=as_of,
         source_name="EMOData",
-        quality={
-            **inventory.get("quality", {}),
-            "includedRows": len(buildings),
-            "inventoryBuildings": len(buildings),
-            "labelsWithMultipleMunicipalOwners": sum(
-                len(entry["owners"]) > 1 for entry in labels.values()
-            ),
-            "geographicEnergyLabelsReturned": returned,
-            "matchedEnergyLabelCandidates": matched_candidates,
-            "sourceLabelFallbackBuildings": len(
-                source_label_building_keys - emodata_matched_building_keys
-            ),
-            "unmatchedGeographicEnergyLabels": unmatched,
-            "malformedEnergyLabels": malformed,
-            "energyLabelCompaniesFound": len(company_names),
-        },
+        quality=quality,
+        source_fallback_keys=source_fallback_keys,
     )
     if export_dir:
-        write_building_exports(export_dir, municipalities, buildings, labels, as_of)
+        write_building_exports(
+            export_dir,
+            municipalities,
+            current_buildings,
+            current_labels,
+            as_of,
+        )
+        write_building_exports(
+            _expanded_output_directory(export_dir),
+            municipalities,
+            buildings,
+            labels,
+            as_of,
+        )
     if building_data_dir:
         write_building_data(
             building_data_dir,
+            municipalities,
+            current_buildings,
+            current_labels,
+            as_of,
+        )
+        write_building_data(
+            _expanded_output_directory(building_data_dir),
             municipalities,
             buildings,
             labels,

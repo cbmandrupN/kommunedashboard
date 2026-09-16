@@ -35,7 +35,7 @@ EMODATA_CONSULTANT_URL = (
     "https://emoweb.dk/emodata/EMOData.svc/"
     "SearchEnergyLabelUID/{serial}/Serial,HD"
 )
-EMODATA_CONSULTANT_WORKERS = 16
+EMODATA_CONSULTANT_WORKERS = 48
 ENERGY_LABEL_LOOKUP_URL = "https://tjekenergimaerke.emoweb.dk/"
 ENERGY_LABEL_LOOKUP_TEMPLATE = (
     f"{ENERGY_LABEL_LOOKUP_URL}TjekEnergimaerkeSkabelon.xlsx"
@@ -1460,6 +1460,7 @@ def _fetch_energy_label_consultants(
     serials: Iterable[str],
     username: str,
     password: str,
+    cache_path: Path | None = None,
 ) -> dict[str, str]:
     unique_serials = sorted(
         {
@@ -1471,6 +1472,30 @@ def _fetch_energy_label_consultants(
     if not unique_serials:
         return {}
 
+    cache: dict[str, str] = {}
+    if cache_path and cache_path.exists():
+        cached_content = json.loads(cache_path.read_text(encoding="utf-8"))
+        if not isinstance(cached_content, dict):
+            raise RuntimeError("Consultant cache must contain a JSON object")
+        cache = {
+            str(serial): str(consultant_name or "")
+            for serial, consultant_name in cached_content.items()
+        }
+    serials_to_fetch = [
+        serial for serial in unique_serials if serial not in cache
+    ]
+
+    def write_cache() -> None:
+        if cache_path is None:
+            return
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = cache_path.with_suffix(f"{cache_path.suffix}.tmp")
+        temporary_path.write_text(
+            json.dumps(cache, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary_path.replace(cache_path)
+
     def fetch(serial: str) -> tuple[str, str]:
         payload = _request_json(
             EMODATA_CONSULTANT_URL.format(serial=serial),
@@ -1479,13 +1504,20 @@ def _fetch_energy_label_consultants(
         )
         return serial, _consultant_name_from_search(payload, serial)
 
-    consultants: dict[str, str] = {}
+    if not serials_to_fetch:
+        return {
+            serial: cache[serial]
+            for serial in unique_serials
+            if cache.get(serial)
+        }
+
+    completed = 0
     with ThreadPoolExecutor(
-        max_workers=min(EMODATA_CONSULTANT_WORKERS, len(unique_serials))
+        max_workers=min(EMODATA_CONSULTANT_WORKERS, len(serials_to_fetch))
     ) as executor:
         futures = {
             executor.submit(fetch, serial): serial
-            for serial in unique_serials
+            for serial in serials_to_fetch
         }
         for future in as_completed(futures):
             serial = futures[future]
@@ -1495,9 +1527,21 @@ def _fetch_energy_label_consultants(
                 raise RuntimeError(
                     f"Could not fetch consultant for energy label {serial}"
                 ) from error
-            if consultant_name:
-                consultants[matched_serial] = consultant_name
-    return consultants
+            cache[matched_serial] = consultant_name
+            completed += 1
+            if completed % 500 == 0:
+                write_cache()
+                print(
+                    f"Fetched consultants for {completed} of "
+                    f"{len(serials_to_fetch)} energy labels",
+                    flush=True,
+                )
+    write_cache()
+    return {
+        serial: cache[serial]
+        for serial in unique_serials
+        if cache.get(serial)
+    }
 
 
 def update_from_emodata(
@@ -1506,6 +1550,7 @@ def update_from_emodata(
     as_of: date,
     export_dir: Path | None = None,
     building_data_dir: Path | None = None,
+    consultant_cache_path: Path | None = None,
 ) -> dict[str, Any]:
     username = os.environ.get("EMODATA_USERNAME")
     password = os.environ.get("EMODATA_PASSWORD")
@@ -1640,6 +1685,7 @@ def update_from_emodata(
         current_serials,
         username,
         password,
+        consultant_cache_path,
     )
     labels: dict[str, dict[str, Any]] = {}
     for key, (serial, valid_to, building, report_url) in latest_by_building.items():
@@ -1724,6 +1770,7 @@ def _parse_args() -> argparse.Namespace:
     emodata.add_argument("--dashboard", type=Path, required=True)
     emodata.add_argument("--exports", type=Path)
     emodata.add_argument("--building-data", type=Path)
+    emodata.add_argument("--consultant-cache", type=Path)
     return parser.parse_args()
 
 
@@ -1738,6 +1785,7 @@ def main() -> int:
             args.as_of,
             args.exports,
             args.building_data,
+            args.consultant_cache,
         )
     else:
         dashboard = update_from_emodata(

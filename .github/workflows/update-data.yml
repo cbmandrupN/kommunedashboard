@@ -29,7 +29,8 @@ jobs:
             --inventory data/municipality-inventory.json.gz \
             --dashboard src/data/dashboard-data.json \
             --exports public/exports \
-            --building-data public/buildings | tee update-summary.json
+            --building-data public/buildings \
+            --consultant-cache data/energy-label-consultants.json | tee update-summary.json
       - name: Test generated data
         run: python -m unittest discover -s tests -v
       - name: Write job summary
@@ -40,7 +41,8 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
       - name: Commit updated data
         run: |
-          git add src/data/dashboard-data.json \
+          git add data/energy-label-consultants.json \
+            src/data/dashboard-data.json \
             public/exports public/buildings \
             public/exports-from-60 public/buildings-from-60 \
             public/exports-with-coowners public/buildings-with-coowners \

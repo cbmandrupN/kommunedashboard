@@ -16,7 +16,6 @@ import urllib.request
 import uuid
 import zipfile
 from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from html import unescape
@@ -31,11 +30,6 @@ EMODATA_URL = (
     "https://emoweb.dk/emodata/EMOData.svc/"
     "SearchEnergyLabelsMunicipality/{municipality}"
 )
-EMODATA_CONSULTANT_URL = (
-    "https://emoweb.dk/emodata/EMOData.svc/"
-    "SearchEnergyLabelUID/{serial}/Serial,HD"
-)
-EMODATA_CONSULTANT_WORKERS = 16
 ENERGY_LABEL_LOOKUP_URL = "https://tjekenergimaerke.emoweb.dk/"
 ENERGY_LABEL_LOOKUP_TEMPLATE = (
     f"{ENERGY_LABEL_LOOKUP_URL}TjekEnergimaerkeSkabelon.xlsx"
@@ -549,7 +543,6 @@ def write_building_exports(
                 record["area"],
                 record["energyLabel"],
                 record["companyName"],
-                record["consultantName"],
                 record["validTo"],
                 {
                     "unlabelled": "Mangler energimærke",
@@ -576,7 +569,6 @@ def write_building_exports(
                     "Opvarmet BBR-areal (m²)",
                     "EM-nummer",
                     "Energimærkningsfirma",
-                    "Energikonsulent",
                     "Gyldig til",
                     "Status",
                     "Mangler gyldigt mærke",
@@ -593,13 +585,12 @@ def _building_records_by_cvr(
 ) -> dict[str, list[dict[str, str | int]]]:
     latest_by_building: dict[
         tuple[str, str, str],
-        tuple[str, date, str, str, str],
+        tuple[str, date, str, str],
     ] = {}
     for serial, entry in labels.items():
         valid_to = entry["validTo"]
         report_url = _energy_label_report_url(serial, entry.get("reportUrl"))
         company_name = str(entry.get("companyName") or "")
-        consultant_name = str(entry.get("consultantName") or "")
         for owner_buildings in entry["owners"].values():
             for key in owner_buildings:
                 current = latest_by_building.get(key)
@@ -609,7 +600,6 @@ def _building_records_by_cvr(
                         valid_to,
                         report_url,
                         company_name,
-                        consultant_name,
                     )
 
     records_by_cvr: dict[str, list[dict[str, str | int]]] = defaultdict(list)
@@ -619,7 +609,6 @@ def _building_records_by_cvr(
         valid_to = label[1] if label else None
         report_url = label[2] if label else ""
         company_name = label[3] if label else ""
-        consultant_name = label[4] if label else ""
         status = (
             "unlabelled"
             if valid_to is None
@@ -645,7 +634,6 @@ def _building_records_by_cvr(
                 "validTo": valid_to.isoformat() if valid_to else "",
                 "reportUrl": report_url,
                 "companyName": company_name,
-                "consultantName": consultant_name,
                 "status": status,
             }
         )
@@ -674,7 +662,7 @@ def write_building_data(
     data_dir.mkdir(parents=True, exist_ok=True)
     for cvr, municipality_name in municipalities.items():
         payload = {
-            "schemaVersion": 2,
+            "schemaVersion": 1,
             "asOf": as_of.isoformat(),
             "municipality": {"name": municipality_name, "cvr": cvr},
             "buildings": records_by_cvr.get(cvr, []),
@@ -802,7 +790,7 @@ def _aggregate_dashboard_scopes(
         )
 
     dashboard = scope_dashboards["current"]
-    dashboard["schemaVersion"] = 6
+    dashboard["schemaVersion"] = 5
     dashboard["coOwnedScope"] = {
         **_scope_payload(scope_dashboards["with-coowners"]),
         "includeCoOwners": True,
@@ -836,7 +824,6 @@ def _scope_payload(dashboard: dict[str, Any]) -> dict[str, Any]:
         "totalsMissingLabel": dashboard["totalsMissingLabel"],
         "municipalities": dashboard["municipalities"],
         "companyAnalysis": dashboard["companyAnalysis"],
-        "consultantAnalysis": dashboard["consultantAnalysis"],
         "quality": dashboard["quality"],
     }
 
@@ -1195,11 +1182,6 @@ def aggregate_labels(
             municipalities,
             as_of,
         ),
-        "consultantAnalysis": _consultant_analysis(
-            labels,
-            municipalities,
-            as_of,
-        ),
         "quality": {
             **quality,
             "municipalityCount": len(rows),
@@ -1288,90 +1270,6 @@ def _company_analysis(
     }
 
 
-def _consultant_analysis(
-    labels: dict[str, dict[str, Any]],
-    municipalities: dict[str, str],
-    as_of: date,
-) -> dict[str, Any]:
-    consultants: dict[tuple[str, str], dict[str, Any]] = {}
-    attributed_reports = 0
-    attributed_buildings = 0
-    attributed_area = 0
-
-    for entry in labels.values():
-        consultant_name = str(entry.get("consultantName") or "").strip()
-        if not consultant_name:
-            continue
-        company_name = str(entry.get("companyName") or "").strip()
-        attributed_reports += 1
-        expiry_bucket = _bucket(entry["validTo"], as_of) or "later"
-        consultant = consultants.setdefault(
-            (consultant_name, company_name),
-            {
-                "name": consultant_name,
-                "companyName": company_name,
-                "reports": 0,
-                "buildings": 0,
-                "area": 0,
-                "expiry": {**{bucket: 0 for bucket in BUCKETS}, "later": 0},
-                "municipalities": {},
-            },
-        )
-        consultant["reports"] += 1
-        consultant["expiry"][expiry_bucket] += 1
-
-        for cvr, owner_buildings in entry["owners"].items():
-            building_count = len(owner_buildings)
-            area = sum(building.area for building in owner_buildings.values())
-            attributed_buildings += building_count
-            attributed_area += area
-            consultant["buildings"] += building_count
-            consultant["area"] += area
-            municipality = consultant["municipalities"].setdefault(
-                cvr,
-                {
-                    "name": municipalities[cvr],
-                    "cvr": cvr,
-                    "reports": 0,
-                    "buildings": 0,
-                    "area": 0,
-                },
-            )
-            municipality["reports"] += 1
-            municipality["buildings"] += building_count
-            municipality["area"] += area
-
-    consultant_rows = [
-        {
-            **consultant,
-            "municipalities": sorted(
-                consultant["municipalities"].values(),
-                key=lambda row: (
-                    -row["reports"],
-                    -row["buildings"],
-                    row["name"],
-                ),
-            ),
-        }
-        for consultant in consultants.values()
-    ]
-    consultant_rows.sort(
-        key=lambda row: (
-            -row["reports"],
-            -row["buildings"],
-            row["name"],
-            row["companyName"],
-        )
-    )
-    return {
-        "totalReports": len(labels),
-        "attributedReports": attributed_reports,
-        "attributedBuildings": attributed_buildings,
-        "attributedArea": attributed_area,
-        "consultants": consultant_rows,
-    }
-
-
 def write_dashboard(path: Path, dashboard: dict[str, Any]) -> None:
     if dashboard["quality"]["municipalityCount"] != 98:
         raise ValueError("Refusing to write dashboard without all 98 municipalities")
@@ -1427,77 +1325,6 @@ def _request_json(url: str, username: str, password: str) -> dict[str, Any]:
         if attempt < 4:
             time.sleep(5 * (attempt + 1))
     raise RuntimeError(f"EMOData request failed after retries: {last_error}")
-
-
-def _consultant_name_from_search(
-    payload: dict[str, Any],
-    serial: str,
-) -> str:
-    results = payload.get("SearchResults")
-    if results is None:
-        status = payload.get("ResponseStatus") or {}
-        status_name = str(status.get("Status") or "")
-        if status_name in {"RESULT_EMPTY", "HIDDEN", "NOT_SUPPORTED"}:
-            return ""
-        raise RuntimeError(
-            f"Unexpected EMOData consultant response for {serial}: "
-            f"{status_name or 'missing status'}"
-        )
-    if not isinstance(results, list):
-        raise RuntimeError(
-            f"Unexpected EMOData consultant result type for {serial}"
-        )
-    for result in results:
-        if (
-            str(result.get("EnergyLabelSerialIdentifier") or "").strip()
-            == serial
-        ):
-            return str(result.get("SubmitterConsultantName") or "").strip()
-    return ""
-
-
-def _fetch_energy_label_consultants(
-    serials: Iterable[str],
-    username: str,
-    password: str,
-) -> dict[str, str]:
-    unique_serials = sorted(
-        {
-            str(serial).strip()
-            for serial in serials
-            if str(serial).strip().isdigit()
-        }
-    )
-    if not unique_serials:
-        return {}
-
-    def fetch(serial: str) -> tuple[str, str]:
-        payload = _request_json(
-            EMODATA_CONSULTANT_URL.format(serial=serial),
-            username,
-            password,
-        )
-        return serial, _consultant_name_from_search(payload, serial)
-
-    consultants: dict[str, str] = {}
-    with ThreadPoolExecutor(
-        max_workers=min(EMODATA_CONSULTANT_WORKERS, len(unique_serials))
-    ) as executor:
-        futures = {
-            executor.submit(fetch, serial): serial
-            for serial in unique_serials
-        }
-        for future in as_completed(futures):
-            serial = futures[future]
-            try:
-                matched_serial, consultant_name = future.result()
-            except Exception as error:
-                raise RuntimeError(
-                    f"Could not fetch consultant for energy label {serial}"
-                ) from error
-            if consultant_name:
-                consultants[matched_serial] = consultant_name
-    return consultants
 
 
 def update_from_emodata(
@@ -1636,11 +1463,6 @@ def update_from_emodata(
         ).items()
         if serial in current_serials
     }
-    consultant_names = _fetch_energy_label_consultants(
-        current_serials,
-        username,
-        password,
-    )
     labels: dict[str, dict[str, Any]] = {}
     for key, (serial, valid_to, building, report_url) in latest_by_building.items():
         entry = labels.setdefault(
@@ -1649,7 +1471,6 @@ def update_from_emodata(
                 "validTo": valid_to,
                 "reportUrl": report_url,
                 "companyName": company_names.get(serial, ""),
-                "consultantName": consultant_names.get(serial, ""),
                 "owners": defaultdict(dict),
             },
         )
@@ -1672,7 +1493,6 @@ def update_from_emodata(
         "unmatchedGeographicEnergyLabels": unmatched,
         "malformedEnergyLabels": malformed,
         "energyLabelCompaniesFound": len(company_names),
-        "energyLabelConsultantsFound": len(consultant_names),
     }
     dashboard, scope_assets = _aggregate_dashboard_scopes(
         municipalities=municipalities,

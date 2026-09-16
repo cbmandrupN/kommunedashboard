@@ -71,20 +71,17 @@ python scripts\pipeline.py --as-of 2026-09-04 import-workbook `
 GitHub Action **Update EMOData** kører automatisk den første dag i hver måned
 kl. 03.17 UTC og kan også startes manuelt. Den henter seneste energimærker,
 matcher dem mod inventaret og slår energimærkningsfirmaet op via Energistyrelsens
-offentlige Tjek Energimærke. Den tilknyttede energikonsulent hentes fra EMOData
-på rapportens EM-nummer. Derefter opdateres de kommunevise Excel-udtræk, og
+offentlige Tjek Energimærke. Derefter opdateres de kommunevise Excel-udtræk, og
 dashboardet genudgives. Excel-filerne indeholder adresse, postnummer, BFE,
-bygningsnummer, opvarmet BBR-areal, EM-nummer, energimærkningsfirma, energikonsulent,
-udløbsdato og status.
+bygningsnummer, opvarmet BBR-areal, EM-nummer, energimærkningsfirma, udløbsdato og status.
 De samme bygningsoplysninger genereres som kommunevise JSON-filer til den
 søgbare bygningsliste i dashboardet. Rapporten kan åbnes direkte fra
 bygningslisten, og kommunevisningen opsummerer antal rapporter og omfattede
 bygninger pr. energimærkningsfirma. Den landsdækkende firmaanalyse viser
 desuden firmaernes markedsandel blandt sikkert matchede rapporter, antal
 rapporter, omfattede bygninger og m², udløbsfordeling samt kommunevis
-aktivitet. Analysen kan skiftes til konsulentniveau, hvor samme opgørelser vises
-for den enkelte konsulent og det tilknyttede firma. Fra kommuneoversigten kan den
-valgte kommunes bygningsliste åbnes med et præcist filter på firma eller konsulent.
+aktivitet. Fra kommuneoversigten kan den valgte kommunes bygningsliste åbnes
+med et præcist filter på firmaet.
 Hvis en bygning ikke kan matches i EMOData, bruges energimærket fra det
 oprindelige kommunale udtræk som fallback.
 Repositoryet skal have de

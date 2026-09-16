@@ -31,16 +31,20 @@ EMODATA_URL = (
     "https://emoweb.dk/emodata/EMOData.svc/"
     "SearchEnergyLabelsMunicipality/{municipality}"
 )
-EMODATA_CONSULTANT_URL = (
-    "https://emoweb.dk/emodata/EMOData.svc/"
-    "SearchEnergyLabelUID/{serial}/Serial,HD"
+EMODATA_AREA_URL = (
+    "https://emoweb.dk/emodata/EMOData.svc/GetEnergyLabelInArea"
 )
-EMODATA_CONSULTANT_WORKERS = 48
+EMODATA_AREA_PAGE_SIZE = 1000
+EMODATA_AREA_WORKERS = 12
 ENERGY_LABEL_LOOKUP_URL = "https://tjekenergimaerke.emoweb.dk/"
+ENERGY_LABEL_XML_URL = f"{ENERGY_LABEL_LOOKUP_URL}api/attachment/xml/{{serial}}"
 ENERGY_LABEL_LOOKUP_TEMPLATE = (
     f"{ENERGY_LABEL_LOOKUP_URL}TjekEnergimaerkeSkabelon.xlsx"
 )
 ENERGY_LABEL_COMPANY_BATCH_SIZE = 3000
+ENERGY_LABEL_CONSULTANT_WORKERS = 16
+ENERGY_LABEL_XML_PREFIX_LIMIT = 64 * 1024
+ENERGY_LABEL_XML_BATCH_LIMIT = 500
 YEARS = tuple(str(year) for year in range(2026, 2038))
 BUCKETS = ("expired", *YEARS)
 PUBLIC_PERIODIC_AREA_THRESHOLD = 250
@@ -1429,31 +1433,155 @@ def _request_json(url: str, username: str, password: str) -> dict[str, Any]:
     raise RuntimeError(f"EMOData request failed after retries: {last_error}")
 
 
-def _consultant_name_from_search(
-    payload: dict[str, Any],
+def _consultant_name_from_xml_prefix(
+    content: bytes,
     serial: str,
 ) -> str:
-    results = payload.get("SearchResults")
-    if results is None:
-        status = payload.get("ResponseStatus") or {}
-        status_name = str(status.get("Status") or "")
-        if status_name in {"RESULT_EMPTY", "HIDDEN", "NOT_SUPPORTED"}:
-            return ""
+    if b"<Error" in content:
+        return ""
+    start = content.find(b"<Consultant")
+    end = content.find(b"</Consultant>")
+    if start < 0 or end < 0:
         raise RuntimeError(
-            f"Unexpected EMOData consultant response for {serial}: "
-            f"{status_name or 'missing status'}"
+            f"Consultant element was not found in energy label XML for {serial}"
         )
-    if not isinstance(results, list):
-        raise RuntimeError(
-            f"Unexpected EMOData consultant result type for {serial}"
-        )
-    for result in results:
-        if (
-            str(result.get("EnergyLabelSerialIdentifier") or "").strip()
-            == serial
-        ):
-            return str(result.get("SubmitterConsultantName") or "").strip()
+    consultant = ET.fromstring(
+        content[start : end + len(b"</Consultant>")]
+    )
+    for element in consultant.iter():
+        if element.tag.rsplit("}", 1)[-1] == "Name":
+            return str(element.text or "").strip()
     return ""
+
+
+def _fetch_consultant_from_xml(serial: str) -> str:
+    request = urllib.request.Request(
+        ENERGY_LABEL_XML_URL.format(serial=serial),
+        headers={"User-Agent": "kommunedashboard/1.0"},
+    )
+    last_error: Exception | None = None
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                content = bytearray()
+                while len(content) < ENERGY_LABEL_XML_PREFIX_LIMIT:
+                    chunk = response.read(
+                        min(
+                            4096,
+                            ENERGY_LABEL_XML_PREFIX_LIMIT - len(content),
+                        )
+                    )
+                    if not chunk:
+                        break
+                    content.extend(chunk)
+                    if b"</Consultant>" in content or b"</Error>" in content:
+                        break
+            return _consultant_name_from_xml_prefix(bytes(content), serial)
+        except urllib.error.HTTPError as error:
+            if error.code not in {429, 500, 502, 503, 504}:
+                raise RuntimeError(
+                    f"Tjek Energimærke rejected XML request with HTTP "
+                    f"{error.code}"
+                ) from error
+            last_error = error
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            last_error = error
+        if attempt < 3:
+            time.sleep(2 * (attempt + 1))
+    raise RuntimeError(
+        f"Tjek Energimærke XML request failed after retries: {last_error}"
+    )
+
+
+def _fetch_consultants_from_area(
+    serials: Iterable[str],
+    username: str,
+    password: str,
+) -> dict[str, str]:
+    targets = set(serials)
+    consultants: dict[str, str] = {}
+    seen_targets: set[str] = set()
+
+    def fetch_page(page_number: int) -> tuple[int, list[dict[str, Any]]]:
+        query = urllib.parse.urlencode(
+            {
+                "coordinateX1": "58.0",
+                "coordinateY1": "7.0",
+                "coordinateX2": "54.0",
+                "coordinateY2": "16.0",
+                "pageNumber": page_number,
+                "pageSize": EMODATA_AREA_PAGE_SIZE,
+            }
+        )
+        payload = _request_json(
+            f"{EMODATA_AREA_URL}?{query}",
+            username,
+            password,
+        )
+        results = payload.get("SearchResults")
+        if results is None:
+            status = payload.get("ResponseStatus") or {}
+            if str(status.get("Status") or "") == "RESULT_EMPTY":
+                return page_number, []
+            raise RuntimeError(
+                f"Unexpected area response on page {page_number}: "
+                f"{status.get('Status') or 'missing status'}"
+            )
+        if not isinstance(results, list):
+            raise RuntimeError(
+                f"Unexpected area result type on page {page_number}"
+            )
+        return page_number, results
+
+    def collect(results: Iterable[dict[str, Any]]) -> None:
+        for result in results:
+            serial = str(
+                result.get("EnergyLabelSerialIdentifier") or ""
+            ).strip()
+            if serial not in targets:
+                continue
+            seen_targets.add(serial)
+            consultant_name = str(
+                result.get("SubmitterConsultantName") or ""
+            ).strip()
+            if consultant_name:
+                consultants[serial] = consultant_name
+
+    page_number, first_page = fetch_page(1)
+    collect(first_page)
+    if len(first_page) < EMODATA_AREA_PAGE_SIZE or seen_targets == targets:
+        return consultants
+
+    next_page = page_number + 1
+    with ThreadPoolExecutor(max_workers=EMODATA_AREA_WORKERS) as executor:
+        while next_page <= 5000:
+            pages = range(next_page, next_page + EMODATA_AREA_WORKERS)
+            futures = {
+                executor.submit(fetch_page, page): page
+                for page in pages
+            }
+            batch: dict[int, list[dict[str, Any]]] = {}
+            for future in as_completed(futures):
+                page, results = future.result()
+                batch[page] = results
+            for page in sorted(batch):
+                collect(batch[page])
+            print(
+                f"Scanned {next_page + EMODATA_AREA_WORKERS - 1} "
+                f"area pages; matched {len(seen_targets)} of "
+                f"{len(targets)} energy labels",
+                flush=True,
+            )
+            if (
+                any(
+                    len(results) < EMODATA_AREA_PAGE_SIZE
+                    for results in batch.values()
+                )
+                or seen_targets == targets
+            ):
+                return consultants
+            next_page += EMODATA_AREA_WORKERS
+    raise RuntimeError("Area search exceeded 5000 pages")
 
 
 def _fetch_energy_label_consultants(
@@ -1496,14 +1624,6 @@ def _fetch_energy_label_consultants(
         )
         temporary_path.replace(cache_path)
 
-    def fetch(serial: str) -> tuple[str, str]:
-        payload = _request_json(
-            EMODATA_CONSULTANT_URL.format(serial=serial),
-            username,
-            password,
-        )
-        return serial, _consultant_name_from_search(payload, serial)
-
     if not serials_to_fetch:
         return {
             serial: cache[serial]
@@ -1511,31 +1631,46 @@ def _fetch_energy_label_consultants(
             if cache.get(serial)
         }
 
-    completed = 0
-    with ThreadPoolExecutor(
-        max_workers=min(EMODATA_CONSULTANT_WORKERS, len(serials_to_fetch))
-    ) as executor:
-        futures = {
-            executor.submit(fetch, serial): serial
-            for serial in serials_to_fetch
-        }
-        for future in as_completed(futures):
-            serial = futures[future]
-            try:
-                matched_serial, consultant_name = future.result()
-            except Exception as error:
-                raise RuntimeError(
-                    f"Could not fetch consultant for energy label {serial}"
-                ) from error
-            cache[matched_serial] = consultant_name
-            completed += 1
-            if completed % 500 == 0:
-                write_cache()
-                print(
-                    f"Fetched consultants for {completed} of "
-                    f"{len(serials_to_fetch)} energy labels",
-                    flush=True,
-                )
+    if len(serials_to_fetch) > ENERGY_LABEL_XML_BATCH_LIMIT:
+        fetched = _fetch_consultants_from_area(
+            serials_to_fetch,
+            username,
+            password,
+        )
+        for serial in serials_to_fetch:
+            cache[serial] = fetched.get(serial, "")
+    else:
+        def fetch(serial: str) -> tuple[str, str]:
+            return serial, _fetch_consultant_from_xml(serial)
+
+        completed = 0
+        with ThreadPoolExecutor(
+            max_workers=min(
+                ENERGY_LABEL_CONSULTANT_WORKERS,
+                len(serials_to_fetch),
+            )
+        ) as executor:
+            futures = {
+                executor.submit(fetch, serial): serial
+                for serial in serials_to_fetch
+            }
+            for future in as_completed(futures):
+                serial = futures[future]
+                try:
+                    matched_serial, consultant_name = future.result()
+                except Exception as error:
+                    raise RuntimeError(
+                        f"Could not fetch consultant for energy label {serial}"
+                    ) from error
+                cache[matched_serial] = consultant_name
+                completed += 1
+                if completed % 100 == 0:
+                    write_cache()
+                    print(
+                        f"Fetched consultants for {completed} of "
+                        f"{len(serials_to_fetch)} energy labels",
+                        flush=True,
+                    )
     write_cache()
     return {
         serial: cache[serial]

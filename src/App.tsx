@@ -519,7 +519,7 @@ export default function App() {
   )
   const chartMetricLabel = chartMetric === 'buildings'
     ? 'antal bygninger'
-    : 'samlet areal'
+    : 'samlet opvarmet BBR-areal'
   const formatChartValue = chartMetric === 'buildings'
     ? formatBuildings
     : formatArea
@@ -663,13 +663,13 @@ export default function App() {
             </div>
             <p className="mt-1 text-xs text-slate-500">
               Tilvælg {numberFormat.format(addedAreaScopeBuildings)} direkte ejede bygninger
-              på 60–250 m² eller bygninger, hvor kommunen står som medejer.
+              med 60–250 m² opvarmet BBR-areal eller bygninger, hvor kommunen står som medejer.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
             <ScopeControl
-              label="Areal"
-              ariaLabel="Vælg arealgrænse"
+              label="Opvarmet BBR-areal"
+              ariaLabel="Vælg grænse for opvarmet BBR-areal"
               value={areaScope}
               options={[
                 ['current', 'Over 250 m²'],
@@ -749,6 +749,7 @@ export default function App() {
             Automatisk afgrænsning · {areaScopeLabel} · {ownershipScopeLabel}:
           </span>{' '}
           {numberFormat.format(activeDashboard.quality.inventoryBuildings)} kommunale bygninger er medtaget.
+          {' '}Arealet er beregnet som boligareal plus erhvervsareal registreret i BBR.
           Anvendelseskoder, fredede bygninger og bygninger registreret uden varmeinstallation er frasorteret efter{' '}
           <a className="font-medium text-blue-700 underline" href="https://www.hbemo.dk/vejledning/faq/bekendtgoerelse-om-energimaerkning-af-bygninger" target="_blank" rel="noreferrer">HBEMO</a>
           {' '}og den gældende{' '}
@@ -803,7 +804,7 @@ export default function App() {
               >
                 {([
                   ['buildings', 'Bygninger'],
-                  ['area', 'm²'],
+                  ['area', 'Opvarmet m²'],
                 ] as const).map(([value, label]) => (
                   <button
                     key={value}
@@ -842,7 +843,7 @@ export default function App() {
               />
               <Bar
                 dataKey="value"
-                name={chartMetric === 'buildings' ? 'Bygninger' : 'Areal'}
+                name={chartMetric === 'buildings' ? 'Bygninger' : 'Opvarmet BBR-areal'}
                 radius={[5, 5, 0, 0]}
                 maxBarSize={72}
                 minPointSize={3}
@@ -899,7 +900,7 @@ export default function App() {
                         <th className="num">Markedsandel</th>
                         <th className="num">Rapporter</th>
                         <th className="num">Bygninger</th>
-                        <th className="num">Areal</th>
+                        <th className="num">Opvarmet BBR-areal</th>
                         <th className="num">Kommuner</th>
                       </tr>
                     </thead>
@@ -973,7 +974,7 @@ export default function App() {
                     value={numberFormat.format(selectedCompany.buildings)}
                   />
                   <CompanyMetric
-                    label="Omfattet areal"
+                    label="Opvarmet BBR-areal"
                     value={formatArea(selectedCompany.area)}
                   />
                   <CompanyMetric
@@ -1033,7 +1034,7 @@ export default function App() {
                           <th>Kommune</th>
                           <th className="num">Rapporter</th>
                           <th className="num">Bygninger</th>
-                          <th className="num">Areal</th>
+                          <th className="num">Opvarmet BBR-areal</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1173,7 +1174,7 @@ export default function App() {
                         <th>Rapport</th>
                         <th>BFE-nummer</th>
                         <th className="num">Bygning</th>
-                        <th className="num">Areal</th>
+                        <th className="num">Opvarmet BBR-areal</th>
                       </tr>
                     </thead>
                     <tbody>

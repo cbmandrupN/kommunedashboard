@@ -204,6 +204,12 @@ def _integer(value: str | None) -> int:
     return round(float(value))
 
 
+def _heated_bbr_area(row: dict[str, str]) -> int:
+    return _integer(row.get(_find_column(row, "Boligareal"))) + _integer(
+        row.get(_find_column(row, "Erhvervsareal"))
+    )
+
+
 def _split_values(value: str | None) -> tuple[str, ...]:
     if not value:
         return ()
@@ -560,7 +566,7 @@ def write_building_exports(
                     "Postnr.",
                     "BFE-nummer",
                     "Bygningsnummer",
-                    "Areal (m²)",
+                    "Opvarmet BBR-areal (m²)",
                     "EM-nummer",
                     "Energimærkningsfirma",
                     "Gyldig til",
@@ -913,9 +919,7 @@ def import_workbook(
         sfe = row.get(_find_column(row, "SFE-nummer"), "").strip()
         building_number = row.get(_find_column(row, "Bygningsnummer"), "").strip()
         bfe_values = _split_values(row.get(_find_column(row, "BFE-nummer")))
-        area = _integer(row.get(_find_column(row, "Boligareal"))) + _integer(
-            row.get(_find_column(row, "Erhvervsareal"))
-        )
+        area = _heated_bbr_area(row)
         street = row.get(_find_column(row, "Vejnavn"), "").strip()
         house_number = row.get(_find_column(row, "Husnr."), "").strip()
         postal_code = row.get(_find_column(row, "Postnr."), "").strip()

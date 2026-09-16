@@ -19,8 +19,9 @@ Dashboardet tæller bygninger, hvor energimærket udløber, og viser deres udlø
 også bygninger, der mangler et gyldigt mærke: bygninger uden et fundet mærke plus bygninger
 med et udløbet mærke.
 
-Standardvisningen er afgrænset til kommunalt ejede bygninger med mere end 250 m² samlet
-bolig- og erhvervsareal, jf. § 19 i
+Standardvisningen er afgrænset til kommunalt ejede bygninger med mere end 250 m² opvarmet
+BBR-areal. Dashboardet beregner dette som summen af registreret boligareal og erhvervsareal,
+jf. § 19 i
 [lovbekendtgørelse nr. 1253 af 22. oktober 2025](https://www.retsinformation.dk/eli/lta/2025/1253).
 Dashboardets arealvælger kan desuden vise et foreløbigt scenarie fra 60 m², så bygninger
 på 60–250 m² kan indgå i planlægningen frem mod en mulig regelændring. Scenariet er ikke
@@ -31,7 +32,7 @@ Følgende frasorteres automatisk:
 - BBR-anvendelseskoderne 211-219, 221-223, 229, 231-234, 239, 414, 510, 540, 585, 910, 920 og 930.
 - Bygninger markeret som fredede.
 - Bygninger registreret uden varmeinstallation.
-- Bygninger under den valgte arealgrænse.
+- Bygninger under den valgte grænse for opvarmet BBR-areal.
 
 Reglerne følger §§ 3-5 i
 [bekendtgørelse nr. 549 af 15. maj 2023](https://www.retsinformation.dk/eli/lta/2023/549)
@@ -44,7 +45,8 @@ eller klimaskærm og andre konkrete undtagelser kan ikke afgøres af udtrækket 
 kontrol. Overblikket er derfor et screeningsværktøj og ikke en juridisk afgørelse.
 
 Den komprimerede `data/municipality-inventory.json.gz` indeholder kun de felter, der skal
-bruges til matchning og udtræk: kommune, CVR, kommunekode, BFE, bygningsnummer, areal,
+bruges til matchning og udtræk: kommune, CVR, kommunekode, BFE, bygningsnummer, opvarmet
+BBR-areal (boligareal plus erhvervsareal),
 adresse, ejerskabstype, primær ejer samt kildens seneste EM-nummer og udløbsdato.
 Ejerandele og øvrige råfelter offentliggøres ikke. En bygning medtages både, når kommunen
 står som direkte ejer med sit eget CVR, og når kommunen er anført under øvrige ejere.
@@ -71,7 +73,7 @@ kl. 03.17 UTC og kan også startes manuelt. Den henter seneste energimærker,
 matcher dem mod inventaret og slår energimærkningsfirmaet op via Energistyrelsens
 offentlige Tjek Energimærke. Derefter opdateres de kommunevise Excel-udtræk, og
 dashboardet genudgives. Excel-filerne indeholder adresse, postnummer, BFE,
-bygningsnummer, areal, EM-nummer, energimærkningsfirma, udløbsdato og status.
+bygningsnummer, opvarmet BBR-areal, EM-nummer, energimærkningsfirma, udløbsdato og status.
 De samme bygningsoplysninger genereres som kommunevise JSON-filer til den
 søgbare bygningsliste i dashboardet. Rapporten kan åbnes direkte fra
 bygningslisten, og kommunevisningen opsummerer antal rapporter og omfattede

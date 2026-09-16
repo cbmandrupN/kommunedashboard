@@ -20,6 +20,7 @@ from pipeline import (
     _aggregate_dashboard_scopes,
     _bucket,
     _eligibility_exclusion_reason,
+    _heated_bbr_area,
     _municipality_coowner_cvrs,
     _parse_emodata_date,
     _split_values,
@@ -40,6 +41,16 @@ class PipelineTests(unittest.TestCase):
 
     def test_split_values_normalizes_multiple_bfes(self) -> None:
         self.assertEqual(_split_values("701124, 6000014;701124"), ("701124", "6000014"))
+
+    def test_heated_bbr_area_combines_residential_and_commercial_area(self) -> None:
+        self.assertEqual(
+            _heated_bbr_area({"Boligareal": "125", "Erhvervsareal": "275"}),
+            400,
+        )
+        self.assertEqual(
+            _heated_bbr_area({"Boligareal": "", "Erhvervsareal": "60"}),
+            60,
+        )
 
     def test_inventory_compact_preserves_source_energy_label(self) -> None:
         building = Building(
@@ -538,6 +549,7 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("Mangler energimærke", worksheet)
             self.assertIn("BFE-nummer", worksheet)
             self.assertIn("Energimærkningsfirma", worksheet)
+            self.assertIn("Opvarmet BBR-areal (m²)", worksheet)
             self.assertIn("Ejerskab", worksheet)
             self.assertIn("Primær registreret ejer", worksheet)
             self.assertIn("Adresse", worksheet)

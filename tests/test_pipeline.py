@@ -19,6 +19,7 @@ from pipeline import (
     Building,
     _aggregate_dashboard_scopes,
     _bucket,
+    _consultant_name_from_search,
     _eligibility_exclusion_reason,
     _heated_bbr_area,
     _municipality_coowner_cvrs,
@@ -261,6 +262,57 @@ class PipelineTests(unittest.TestCase):
         self.assertIn(">12A</t>", generated)
         self.assertIn(">1234</t>", generated)
 
+    def test_consultant_name_is_read_from_matching_energy_label(self) -> None:
+        self.assertEqual(
+            _consultant_name_from_search(
+                {
+                    "SearchResults": [
+                        {
+                            "EnergyLabelSerialIdentifier": "311383519",
+                            "SubmitterConsultantName": "Morten Kiil Poulsen",
+                        }
+                    ]
+                },
+                "311383519",
+            ),
+            "Morten Kiil Poulsen",
+        )
+        self.assertEqual(
+            _consultant_name_from_search(
+                {
+                    "SearchResults": None,
+                    "ResponseStatus": {"Status": "RESULT_EMPTY"},
+                },
+                "311000000",
+            ),
+            "",
+        )
+
+    def test_consultant_lookup_uses_serial_search(self) -> None:
+        with mock.patch.object(
+            pipeline,
+            "_request_json",
+            return_value={
+                "SearchResults": [
+                    {
+                        "EnergyLabelSerialIdentifier": "311383519",
+                        "SubmitterConsultantName": "Morten Kiil Poulsen",
+                    }
+                ]
+            },
+        ) as request_json:
+            result = pipeline._fetch_energy_label_consultants(
+                ["311383519"],
+                "user",
+                "password",
+            )
+        self.assertEqual(result, {"311383519": "Morten Kiil Poulsen"})
+        request_json.assert_called_once_with(
+            pipeline.EMODATA_CONSULTANT_URL.format(serial="311383519"),
+            "user",
+            "password",
+        )
+
     def test_unique_label_can_cover_multiple_buildings(self) -> None:
         first = Building("1", "101", ("10",), "1", 100)
         second = Building("1", "101", ("10",), "2", 200)
@@ -315,6 +367,7 @@ class PipelineTests(unittest.TestCase):
                 "EM1": {
                     "validTo": date(2027, 1, 1),
                     "companyName": "Test Energi ApS",
+                    "consultantName": "Anne Rådgiver",
                     "owners": {
                         "1": {
                             ("1", "10", "1"): first,
@@ -325,6 +378,7 @@ class PipelineTests(unittest.TestCase):
                 "EM2": {
                     "validTo": date(2026, 1, 1),
                     "companyName": "Test Energi ApS",
+                    "consultantName": "Anne Rådgiver",
                     "owners": {"2": {("2", "20", "1"): third}},
                 },
                 "EM3": {
@@ -357,6 +411,49 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(company["expiry"]["2027"], 1)
         self.assertEqual(len(company["municipalities"]), 2)
         self.assertEqual(company["municipalities"][0]["name"], "Første Kommune")
+        consultant_analysis = result["consultantAnalysis"]
+        self.assertEqual(consultant_analysis["attributedReports"], 2)
+        consultant = consultant_analysis["consultants"][0]
+        self.assertEqual(consultant["name"], "Anne Rådgiver")
+        self.assertEqual(consultant["companyName"], "Test Energi ApS")
+        self.assertEqual(consultant["buildings"], 3)
+        self.assertEqual(consultant["area"], 600)
+        self.assertEqual(len(consultant["municipalities"]), 2)
+
+    def test_consultants_with_same_name_at_different_companies_stay_separate(self) -> None:
+        first = Building("1", "101", ("10",), "1", 100)
+        second = Building("1", "101", ("20",), "2", 200)
+        result = aggregate_labels(
+            municipalities={"1": "Test Kommune"},
+            municipality_codes={"1": "101"},
+            labels={
+                "EM1": {
+                    "validTo": date(2027, 1, 1),
+                    "companyName": "Firma A",
+                    "consultantName": "Samme Navn",
+                    "owners": {"1": {("1", "10", "1"): first}},
+                },
+                "EM2": {
+                    "validTo": date(2027, 1, 1),
+                    "companyName": "Firma B",
+                    "consultantName": "Samme Navn",
+                    "owners": {"1": {("1", "20", "2"): second}},
+                },
+            },
+            buildings={
+                ("1", "10", "1"): first,
+                ("1", "20", "2"): second,
+            },
+            as_of=date(2026, 9, 4),
+            source_name="fixture",
+            quality={},
+        )
+        consultants = result["consultantAnalysis"]["consultants"]
+        self.assertEqual(len(consultants), 2)
+        self.assertEqual(
+            {consultant["companyName"] for consultant in consultants},
+            {"Firma A", "Firma B"},
+        )
 
     def test_expired_and_unlabelled_buildings_are_missing_valid_labels(self) -> None:
         expired = Building("1", "101", ("10",), "1", 100)
@@ -443,6 +540,11 @@ class PipelineTests(unittest.TestCase):
                     "_fetch_energy_label_companies",
                     return_value={"EM-SOURCE": "Kilde Firma"},
                 ),
+                mock.patch.object(
+                    pipeline,
+                    "_fetch_energy_label_consultants",
+                    return_value={},
+                ),
                 mock.patch.object(pipeline, "write_dashboard"),
             ):
                 result = update_from_emodata(
@@ -454,7 +556,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(municipality["validLabelBuildings"], 1)
         self.assertEqual(municipality["unlabelled"]["buildings"], 1)
         self.assertEqual(result["quality"]["sourceLabelFallbackBuildings"], 1)
-        self.assertEqual(result["schemaVersion"], 5)
+        self.assertEqual(result["schemaVersion"], 6)
         self.assertEqual(result["companyAnalysis"]["attributedReports"], 1)
         self.assertEqual(
             result["companyAnalysis"]["companies"][0]["name"],
@@ -501,6 +603,11 @@ class PipelineTests(unittest.TestCase):
                     "_fetch_energy_label_companies",
                     return_value={"311199190": "Test Energi ApS"},
                 ),
+                mock.patch.object(
+                    pipeline,
+                    "_fetch_energy_label_consultants",
+                    return_value={"311199190": "Test Konsulent"},
+                ),
                 mock.patch.object(pipeline, "write_dashboard"),
             ):
                 update_from_emodata(
@@ -519,6 +626,10 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(
             payload["buildings"][0]["companyName"],
             "Test Energi ApS",
+        )
+        self.assertEqual(
+            payload["buildings"][0]["consultantName"],
+            "Test Konsulent",
         )
 
     def test_building_export_is_valid_xlsx(self) -> None:
@@ -549,6 +660,7 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("Mangler energimærke", worksheet)
             self.assertIn("BFE-nummer", worksheet)
             self.assertIn("Energimærkningsfirma", worksheet)
+            self.assertIn("Energikonsulent", worksheet)
             self.assertIn("Opvarmet BBR-areal (m²)", worksheet)
             self.assertIn("Ejerskab", worksheet)
             self.assertIn("Primær registreret ejer", worksheet)

@@ -39,6 +39,7 @@ type BuildingFilter = 'all' | BuildingStatus | Year
 type ChartMetric = 'buildings' | 'area'
 type AreaScope = 'current' | 'from60'
 type OwnershipScope = 'direct' | 'withCoowners'
+type AnalysisLevel = 'company' | 'consultant'
 type CompanyExpiry = Record<Bucket | 'later', number>
 
 type BuildingRecord = {
@@ -54,6 +55,7 @@ type BuildingRecord = {
   validTo: string
   reportUrl: string
   companyName?: string
+  consultantName?: string
   status: BuildingStatus
 }
 
@@ -96,12 +98,24 @@ type CompanyRecord = {
   municipalities: CompanyMunicipality[]
 }
 
+type ConsultantRecord = CompanyRecord & {
+  companyName: string
+}
+
+type AnalysisRecord = CompanyRecord & {
+  companyName?: string
+}
+
 type CompanyAnalysis = {
   totalReports: number
   attributedReports: number
   attributedBuildings: number
   attributedArea: number
   companies: CompanyRecord[]
+}
+
+type ConsultantAnalysis = Omit<CompanyAnalysis, 'companies'> & {
+  consultants: ConsultantRecord[]
 }
 
 type DashboardScope = {
@@ -113,6 +127,7 @@ type DashboardScope = {
   totalsMissingLabel: { buildings: number; area: number }
   municipalities: Municipality[]
   companyAnalysis?: CompanyAnalysis
+  consultantAnalysis?: ConsultantAnalysis
   quality: {
     municipalityCount: number
     uniqueEnergyLabels: number
@@ -129,6 +144,7 @@ type DashboardScope = {
     sourceLabelFallbackBuildings?: number
     unmatchedEnergyLabels?: number
     unmatchedGeographicEnergyLabels?: number
+    energyLabelConsultantsFound?: number
   }
 }
 
@@ -151,6 +167,7 @@ type DashboardData = DashboardScope & {
 
 const dashboard = dashboardJson as DashboardData
 const EMPTY_COMPANIES: CompanyRecord[] = []
+const EMPTY_CONSULTANTS: ConsultantRecord[] = []
 const numberFormat = new Intl.NumberFormat('da-DK', { maximumFractionDigits: 0 })
 const compactFormat = new Intl.NumberFormat('da-DK', { notation: 'compact', maximumFractionDigits: 1 })
 const percentageFormat = new Intl.NumberFormat('da-DK', { style: 'percent', maximumFractionDigits: 1 })
@@ -216,6 +233,10 @@ function formatArea(value: number) {
 
 function formatExpiryDate(value: string) {
   return value ? shortDateFormat.format(new Date(`${value}T12:00:00`)) : '—'
+}
+
+function consultantKey(consultant: ConsultantRecord) {
+  return `${consultant.name}\u0000${consultant.companyName}`
 }
 
 function buildingMatchesFilter(building: BuildingRecord, filter: BuildingFilter) {
@@ -289,6 +310,7 @@ export default function App() {
   const [buildingRows, setBuildingRows] = useState<BuildingRecord[]>([])
   const [buildingQuery, setBuildingQuery] = useState('')
   const [buildingCompanyFilter, setBuildingCompanyFilter] = useState('')
+  const [buildingConsultantFilter, setBuildingConsultantFilter] = useState('')
   const [buildingFilter, setBuildingFilter] = useState<BuildingFilter>('2026')
   const [visibleBuildingCount, setVisibleBuildingCount] = useState(BUILDING_PAGE_SIZE)
   const [buildingLoading, setBuildingLoading] = useState(false)
@@ -307,10 +329,16 @@ export default function App() {
   ) ?? dashboard
   const municipalities = activeDashboard.municipalities
   const companyAnalysis = activeDashboard.companyAnalysis
+  const consultantAnalysis = activeDashboard.consultantAnalysis
   const companies = companyAnalysis?.companies ?? EMPTY_COMPANIES
+  const consultants = consultantAnalysis?.consultants ?? EMPTY_CONSULTANTS
+  const [analysisLevel, setAnalysisLevel] = useState<AnalysisLevel>('company')
   const [companyQuery, setCompanyQuery] = useState('')
   const [selectedCompanyName, setSelectedCompanyName] = useState(
     companies[0]?.name ?? '',
+  )
+  const [selectedConsultantKey, setSelectedConsultantKey] = useState(
+    consultants[0] ? consultantKey(consultants[0]) : '',
   )
   const totals = activeDashboard.totals.buildings
   const selectedMunicipality = municipalities.find((row) => row.cvr === selectedCvr)
@@ -363,6 +391,7 @@ export default function App() {
   }, [
     areaScope,
     buildingCompanyFilter,
+    buildingConsultantFilter,
     buildingFilter,
     buildingQuery,
     ownershipScope,
@@ -374,11 +403,27 @@ export default function App() {
     setSelectedCompanyName(companies[0]?.name ?? '')
   }, [companies, selectedCompanyName])
 
-  const selectMunicipality = (cvr: string | null, companyName = '') => {
+  useEffect(() => {
+    if (
+      consultants.some(
+        (consultant) => consultantKey(consultant) === selectedConsultantKey,
+      )
+    ) return
+    setSelectedConsultantKey(
+      consultants[0] ? consultantKey(consultants[0]) : '',
+    )
+  }, [consultants, selectedConsultantKey])
+
+  const selectMunicipality = (
+    cvr: string | null,
+    companyName = '',
+    consultantName = '',
+  ) => {
     setSelectedCvr(cvr)
     setBuildingCompanyFilter(companyName)
+    setBuildingConsultantFilter(consultantName)
     setBuildingQuery('')
-    if (companyName) setBuildingFilter('all')
+    if (companyName || consultantName) setBuildingFilter('all')
   }
 
   const selectHorizon = (value: Horizon) => {
@@ -435,6 +480,12 @@ export default function App() {
       if (buildingCompanyFilter && building.companyName !== buildingCompanyFilter) {
         return false
       }
+      if (
+        buildingConsultantFilter
+        && building.consultantName !== buildingConsultantFilter
+      ) {
+        return false
+      }
       if (!buildingMatchesFilter(building, buildingFilter)) return false
       if (!normalizedQuery) return true
       return [
@@ -444,10 +495,17 @@ export default function App() {
         building.buildingNumber,
         building.energyLabel,
         building.companyName ?? '',
+        building.consultantName ?? '',
         building.primaryOwner ?? '',
       ].some((value) => value.toLocaleLowerCase('da-DK').includes(normalizedQuery))
     })
-  }, [buildingCompanyFilter, buildingFilter, buildingQuery, buildingRows])
+  }, [
+    buildingCompanyFilter,
+    buildingConsultantFilter,
+    buildingFilter,
+    buildingQuery,
+    buildingRows,
+  ])
 
   const companySummary = useMemo(() => {
     const companies = new Map<string, { reports: Set<string>; buildings: number }>()
@@ -472,38 +530,55 @@ export default function App() {
     ))
   }, [buildingRows])
 
-  const filteredCompanies = useMemo(() => {
+  const analysisRows: AnalysisRecord[] = (
+    analysisLevel === 'consultant' ? consultants : companies
+  )
+  const activeAnalysis = analysisLevel === 'consultant'
+    ? consultantAnalysis
+    : companyAnalysis
+  const filteredAnalysisRows = useMemo(() => {
     const normalizedQuery = companyQuery.trim().toLocaleLowerCase('da-DK')
-    if (!normalizedQuery) return companies
-    return companies.filter((company) => (
-      company.name.toLocaleLowerCase('da-DK').includes(normalizedQuery)
-      || company.municipalities.some((municipality) => (
+    if (!normalizedQuery) return analysisRows
+    return analysisRows.filter((entry) => (
+      entry.name.toLocaleLowerCase('da-DK').includes(normalizedQuery)
+      || (entry.companyName?.toLocaleLowerCase('da-DK').includes(normalizedQuery)
+        ?? false)
+      || entry.municipalities.some((municipality) => (
         municipality.name.toLocaleLowerCase('da-DK').includes(normalizedQuery)
       ))
     ))
-  }, [companies, companyQuery])
+  }, [analysisRows, companyQuery])
 
   const selectedCompany = companies.find(
     (company) => company.name === selectedCompanyName,
   ) ?? companies[0]
-  const selectedCompanyShare = selectedCompany && companyAnalysis?.attributedReports
-    ? selectedCompany.reports / companyAnalysis.attributedReports
+  const selectedConsultant = consultants.find(
+    (consultant) => consultantKey(consultant) === selectedConsultantKey,
+  ) ?? consultants[0]
+  const selectedAnalysis: AnalysisRecord | undefined = analysisLevel === 'consultant'
+    ? selectedConsultant
+    : selectedCompany
+  const selectedAnalysisCompany = analysisLevel === 'consultant'
+    ? selectedConsultant?.companyName ?? ''
+    : selectedCompany?.name ?? ''
+  const selectedAnalysisShare = selectedAnalysis && activeAnalysis?.attributedReports
+    ? selectedAnalysis.reports / activeAnalysis.attributedReports
     : 0
-  const companyExpiryData = selectedCompany
+  const analysisExpiryData = selectedAnalysis
     ? [
         {
           name: 'Udløbet',
-          value: selectedCompany.expiry.expired,
+          value: selectedAnalysis.expiry.expired,
           color: '#ea580c',
         },
         ...YEARS.map((year) => ({
           name: year,
-          value: selectedCompany.expiry[year],
+          value: selectedAnalysis.expiry[year],
           color: chartColors[year],
         })),
         {
           name: 'Efter 2037',
-          value: selectedCompany.expiry.later,
+          value: selectedAnalysis.expiry.later,
           color: '#64748b',
         },
       ].filter((item) => item.value > 0)
@@ -865,26 +940,60 @@ export default function App() {
           </ResponsiveContainer>
         </Card>
 
-        {companyAnalysis && companies.length > 0 && selectedCompany && (
+        {activeAnalysis && analysisRows.length > 0 && selectedAnalysis && (
           <Card className="order-last overflow-hidden">
             <div className="flex flex-col gap-3 border-b border-slate-200 p-5 lg:flex-row lg:items-center">
               <div className="mr-auto">
                 <h2 className="text-[15px] font-semibold text-slate-900">
-                  Udvidet firmaanalyse
+                  Udvidet firma- og konsulentanalyse
                 </h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  {numberFormat.format(companyAnalysis.attributedReports)} af{' '}
-                  {numberFormat.format(companyAnalysis.totalReports)} rapporter har et sikkert firmamatch.
-                  Markedsandel beregnes blandt disse rapporter.
+                  {numberFormat.format(activeAnalysis.attributedReports)} af{' '}
+                  {numberFormat.format(activeAnalysis.totalReports)} rapporter har et sikkert{' '}
+                  {analysisLevel === 'consultant' ? 'konsulentmatch' : 'firmamatch'}.
+                  Andelen beregnes blandt disse rapporter.
                 </p>
+              </div>
+              <div
+                className="inline-flex self-start rounded-md border border-slate-200 bg-slate-100 p-0.5 lg:self-auto"
+                role="group"
+                aria-label="Vælg analyseniveau"
+              >
+                {([
+                  ['company', 'Firmaer'],
+                  ['consultant', 'Konsulenter'],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setAnalysisLevel(value)}
+                    disabled={value === 'consultant' && consultants.length === 0}
+                    aria-pressed={analysisLevel === value}
+                    className={cn(
+                      'h-8 rounded px-3 text-xs font-semibold transition-colors',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
+                      analysisLevel === value
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800',
+                      value === 'consultant' && consultants.length === 0
+                        && 'cursor-not-allowed opacity-50',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
               <div className="relative w-full lg:w-80">
                 <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={15} />
                 <Input
                   value={companyQuery}
                   onChange={(event) => setCompanyQuery(event.target.value)}
-                  placeholder="Søg firma eller kommune"
-                  aria-label="Søg firma eller kommune i firmaanalysen"
+                  placeholder={analysisLevel === 'consultant'
+                    ? 'Søg konsulent, firma eller kommune'
+                    : 'Søg firma eller kommune'}
+                  aria-label={analysisLevel === 'consultant'
+                    ? 'Søg konsulent, firma eller kommune i analysen'
+                    : 'Søg firma eller kommune i analysen'}
                   className="w-full pl-9"
                 />
               </div>
@@ -893,11 +1002,14 @@ export default function App() {
             <div className="grid xl:grid-cols-[minmax(0,1.05fr)_minmax(460px,0.95fr)]">
               <div className="border-b border-slate-200 xl:border-b-0 xl:border-r">
                 <div className="max-h-[560px] overflow-auto">
-                  <table className="min-w-[900px]">
+                  <table className={analysisLevel === 'consultant'
+                    ? 'min-w-[1080px]'
+                    : 'min-w-[900px]'}>
                     <thead>
                       <tr>
-                        <th>Firma</th>
-                        <th className="num">Markedsandel</th>
+                        <th>{analysisLevel === 'consultant' ? 'Konsulent' : 'Firma'}</th>
+                        {analysisLevel === 'consultant' && <th>Firma</th>}
+                        <th className="num">Andel</th>
                         <th className="num">Rapporter</th>
                         <th className="num">Bygninger</th>
                         <th className="num">Opvarmet BBR-areal</th>
@@ -905,47 +1017,76 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredCompanies.map((company) => (
+                      {filteredAnalysisRows.map((entry) => {
+                        const rowKey = entry.companyName !== undefined
+                          ? consultantKey(entry as ConsultantRecord)
+                          : entry.name
+                        const isSelected = analysisLevel === 'consultant'
+                          ? rowKey === selectedConsultantKey
+                          : entry.name === selectedCompanyName
+                        return (
                         <tr
-                          key={company.name}
+                          key={rowKey}
                           className={cn(
                             'cursor-pointer',
-                            selectedCompany.name === company.name && 'selected-company',
+                            isSelected && 'selected-company',
                           )}
-                          onClick={() => setSelectedCompanyName(company.name)}
+                          onClick={() => {
+                            if (entry.companyName !== undefined) {
+                              setSelectedConsultantKey(
+                                consultantKey(entry as ConsultantRecord),
+                              )
+                            } else {
+                              setSelectedCompanyName(entry.name)
+                            }
+                          }}
                         >
                           <td>
                             <button
                               className="font-medium text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                              onClick={() => setSelectedCompanyName(company.name)}
-                              aria-pressed={selectedCompany.name === company.name}
+                              onClick={() => {
+                                if (entry.companyName !== undefined) {
+                                  setSelectedConsultantKey(
+                                    consultantKey(entry as ConsultantRecord),
+                                  )
+                                } else {
+                                  setSelectedCompanyName(entry.name)
+                                }
+                              }}
+                              aria-pressed={isSelected}
                             >
-                              {company.name}
+                              {entry.name}
                             </button>
                           </td>
+                          {entry.companyName !== undefined && (
+                            <td className="text-slate-600">
+                              {entry.companyName || 'Firma ikke oplyst'}
+                            </td>
+                          )}
                           <td className="num font-semibold text-blue-700">
                             {percentageFormat.format(
-                              company.reports / companyAnalysis.attributedReports,
+                              entry.reports / activeAnalysis.attributedReports,
                             )}
                           </td>
                           <td className="num text-slate-700">
-                            {numberFormat.format(company.reports)}
+                            {numberFormat.format(entry.reports)}
                           </td>
                           <td className="num text-slate-700">
-                            {numberFormat.format(company.buildings)}
+                            {numberFormat.format(entry.buildings)}
                           </td>
-                          <td className="num text-slate-700">{formatArea(company.area)}</td>
+                          <td className="num text-slate-700">{formatArea(entry.area)}</td>
                           <td className="num text-slate-700">
-                            {numberFormat.format(company.municipalities.length)}
+                            {numberFormat.format(entry.municipalities.length)}
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
-                {filteredCompanies.length === 0 && (
+                {filteredAnalysisRows.length === 0 && (
                   <div className="px-5 py-12 text-center text-sm text-slate-500">
-                    Ingen firmaer eller kommuner matcher søgningen.
+                    Ingen {analysisLevel === 'consultant' ? 'konsulenter, firmaer' : 'firmaer'} eller kommuner matcher søgningen.
                   </div>
                 )}
               </div>
@@ -953,33 +1094,38 @@ export default function App() {
               <div className="min-w-0 bg-slate-50/50 p-5">
                 <div>
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">
-                    Valgt firma
+                    {analysisLevel === 'consultant' ? 'Valgt konsulent' : 'Valgt firma'}
                   </div>
                   <h3 className="mt-1 text-lg font-semibold text-slate-950">
-                    {selectedCompany.name}
+                    {selectedAnalysis.name}
                   </h3>
+                  {analysisLevel === 'consultant' && (
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {selectedAnalysis.companyName || 'Firma ikke oplyst'}
+                    </p>
+                  )}
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
                   <CompanyMetric
-                    label="Markedsandel"
-                    value={percentageFormat.format(selectedCompanyShare)}
+                    label="Andel"
+                    value={percentageFormat.format(selectedAnalysisShare)}
                   />
                   <CompanyMetric
                     label="Rapporter"
-                    value={numberFormat.format(selectedCompany.reports)}
+                    value={numberFormat.format(selectedAnalysis.reports)}
                   />
                   <CompanyMetric
                     label="Bygninger"
-                    value={numberFormat.format(selectedCompany.buildings)}
+                    value={numberFormat.format(selectedAnalysis.buildings)}
                   />
                   <CompanyMetric
                     label="Opvarmet BBR-areal"
-                    value={formatArea(selectedCompany.area)}
+                    value={formatArea(selectedAnalysis.area)}
                   />
                   <CompanyMetric
                     label="Kommuner"
-                    value={numberFormat.format(selectedCompany.municipalities.length)}
+                    value={numberFormat.format(selectedAnalysis.municipalities.length)}
                   />
                 </div>
 
@@ -992,7 +1138,7 @@ export default function App() {
                   </p>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart
-                      data={companyExpiryData}
+                      data={analysisExpiryData}
                       margin={{ top: 18, right: 4, left: 0, bottom: 0 }}
                     >
                       <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
@@ -1012,7 +1158,7 @@ export default function App() {
                       />
                       <Tooltip formatter={(value) => `${numberFormat.format(Number(value))} rapporter`} />
                       <Bar dataKey="value" name="Rapporter" radius={[4, 4, 0, 0]} maxBarSize={36}>
-                        {companyExpiryData.map((item) => (
+                        {analysisExpiryData.map((item) => (
                           <Cell key={item.name} fill={item.color} />
                         ))}
                       </Bar>
@@ -1038,14 +1184,17 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedCompany.municipalities.map((municipality) => (
+                        {selectedAnalysis.municipalities.map((municipality) => (
                           <tr key={municipality.cvr}>
                             <td>
                               <button
                                 className="font-medium text-slate-900 underline-offset-2 hover:text-blue-700 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                                 onClick={() => selectMunicipality(
                                   municipality.cvr,
-                                  selectedCompany.name,
+                                  selectedAnalysisCompany,
+                                  analysisLevel === 'consultant'
+                                    ? selectedAnalysis.name
+                                    : '',
                                 )}
                               >
                                 {municipality.name}
@@ -1089,7 +1238,7 @@ export default function App() {
                 <Input
                   value={buildingQuery}
                   onChange={(event) => setBuildingQuery(event.target.value)}
-                  placeholder="Søg adresse, ejer, firma, BFE eller EM-nummer"
+                  placeholder="Søg adresse, ejer, konsulent, firma, BFE eller EM-nummer"
                   className="w-full pl-9"
                 />
               </div>
@@ -1105,20 +1254,29 @@ export default function App() {
                   <option key={year} value={year}>Udløber i {year}</option>
                 ))}
               </Select>
-              {buildingCompanyFilter && (
+              {(buildingCompanyFilter || buildingConsultantFilter) && (
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => setBuildingCompanyFilter('')}
+                  onClick={() => {
+                    setBuildingCompanyFilter('')
+                    setBuildingConsultantFilter('')
+                  }}
                 >
-                  Vis alle firmaer
+                  Vis alle udførere
                 </Button>
               )}
             </div>
 
-            {buildingCompanyFilter && (
+            {(buildingCompanyFilter || buildingConsultantFilter) && (
               <div className="border-b border-blue-200 bg-blue-50 px-4 py-2 text-xs text-blue-800">
-                Firmafilter: <span className="font-semibold">{buildingCompanyFilter}</span>
+                {buildingConsultantFilter ? 'Konsulentfilter' : 'Firmafilter'}:{' '}
+                <span className="font-semibold">
+                  {buildingConsultantFilter || buildingCompanyFilter}
+                </span>
+                {buildingConsultantFilter && buildingCompanyFilter
+                  ? ` · ${buildingCompanyFilter}`
+                  : ''}
               </div>
             )}
 
@@ -1162,7 +1320,7 @@ export default function App() {
             {!buildingError && (
               <>
                 <div className="max-h-[620px] overflow-auto">
-                  <table className="min-w-[1400px]">
+                  <table className="min-w-[1540px]">
                     <thead>
                       <tr>
                         <th>Adresse</th>
@@ -1171,6 +1329,7 @@ export default function App() {
                         <th>Gyldig til</th>
                         <th>EM-nummer</th>
                         <th>Firma</th>
+                        <th>Konsulent</th>
                         <th>Rapport</th>
                         <th>BFE-nummer</th>
                         <th className="num">Bygning</th>
@@ -1208,6 +1367,7 @@ export default function App() {
                             </td>
                             <td className="text-slate-600">{building.energyLabel || '—'}</td>
                             <td className="text-slate-600">{building.companyName || '—'}</td>
+                            <td className="text-slate-600">{building.consultantName || '—'}</td>
                             <td>
                               {building.reportUrl ? (
                                 <a

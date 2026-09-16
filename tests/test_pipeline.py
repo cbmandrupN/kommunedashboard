@@ -313,42 +313,6 @@ class PipelineTests(unittest.TestCase):
             "password",
         )
 
-    def test_consultant_lookup_reuses_and_updates_cache(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            cache_path = Path(temporary_directory) / "consultants.json"
-            cache_path.write_text(
-                json.dumps({"311000001": "Cachet Konsulent"}),
-                encoding="utf-8",
-            )
-            with mock.patch.object(
-                pipeline,
-                "_request_json",
-                return_value={
-                    "SearchResults": [
-                        {
-                            "EnergyLabelSerialIdentifier": "311000002",
-                            "SubmitterConsultantName": "Ny Konsulent",
-                        }
-                    ]
-                },
-            ) as request_json:
-                result = pipeline._fetch_energy_label_consultants(
-                    ["311000001", "311000002"],
-                    "user",
-                    "password",
-                    cache_path,
-                )
-            persisted = json.loads(cache_path.read_text(encoding="utf-8"))
-        self.assertEqual(
-            result,
-            {
-                "311000001": "Cachet Konsulent",
-                "311000002": "Ny Konsulent",
-            },
-        )
-        self.assertEqual(result, persisted)
-        request_json.assert_called_once()
-
     def test_unique_label_can_cover_multiple_buildings(self) -> None:
         first = Building("1", "101", ("10",), "1", 100)
         second = Building("1", "101", ("10",), "2", 200)

@@ -19,7 +19,7 @@ from pipeline import (
     Building,
     _aggregate_dashboard_scopes,
     _bucket,
-    _consultant_name_from_xml_prefix,
+    _consultant_name_from_search,
     _eligibility_exclusion_reason,
     _heated_bbr_area,
     _municipality_coowner_cvrs,
@@ -262,39 +262,56 @@ class PipelineTests(unittest.TestCase):
         self.assertIn(">12A</t>", generated)
         self.assertIn(">1234</t>", generated)
 
-    def test_consultant_name_is_read_from_energy_label_xml(self) -> None:
+    def test_consultant_name_is_read_from_matching_energy_label(self) -> None:
         self.assertEqual(
-            _consultant_name_from_xml_prefix(
-                (
-                    b"<EnergyLabel><Submitter><Consultant>"
-                    b"<ID>402197</ID><Name>Morten Kiil Poulsen</Name>"
-                    b"</Consultant></Submitter></EnergyLabel>"
-                ),
+            _consultant_name_from_search(
+                {
+                    "SearchResults": [
+                        {
+                            "EnergyLabelSerialIdentifier": "311383519",
+                            "SubmitterConsultantName": "Morten Kiil Poulsen",
+                        }
+                    ]
+                },
                 "311383519",
             ),
             "Morten Kiil Poulsen",
         )
         self.assertEqual(
-            _consultant_name_from_xml_prefix(
-                b"<Error>EnergyLabel not found</Error>",
+            _consultant_name_from_search(
+                {
+                    "SearchResults": None,
+                    "ResponseStatus": {"Status": "RESULT_EMPTY"},
+                },
                 "311000000",
             ),
             "",
         )
 
-    def test_consultant_lookup_fetches_public_xml(self) -> None:
+    def test_consultant_lookup_uses_serial_search(self) -> None:
         with mock.patch.object(
             pipeline,
-            "_fetch_consultant_from_xml",
-            return_value="Morten Kiil Poulsen",
-        ) as fetch_xml:
+            "_request_json",
+            return_value={
+                "SearchResults": [
+                    {
+                        "EnergyLabelSerialIdentifier": "311383519",
+                        "SubmitterConsultantName": "Morten Kiil Poulsen",
+                    }
+                ]
+            },
+        ) as request_json:
             result = pipeline._fetch_energy_label_consultants(
                 ["311383519"],
                 "user",
                 "password",
             )
         self.assertEqual(result, {"311383519": "Morten Kiil Poulsen"})
-        fetch_xml.assert_called_once_with("311383519")
+        request_json.assert_called_once_with(
+            pipeline.EMODATA_CONSULTANT_URL.format(serial="311383519"),
+            "user",
+            "password",
+        )
 
     def test_consultant_lookup_reuses_and_updates_cache(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -305,9 +322,16 @@ class PipelineTests(unittest.TestCase):
             )
             with mock.patch.object(
                 pipeline,
-                "_fetch_consultant_from_xml",
-                return_value="Ny Konsulent",
-            ) as fetch_xml:
+                "_request_json",
+                return_value={
+                    "SearchResults": [
+                        {
+                            "EnergyLabelSerialIdentifier": "311000002",
+                            "SubmitterConsultantName": "Ny Konsulent",
+                        }
+                    ]
+                },
+            ) as request_json:
                 result = pipeline._fetch_energy_label_consultants(
                     ["311000001", "311000002"],
                     "user",
@@ -323,31 +347,6 @@ class PipelineTests(unittest.TestCase):
             },
         )
         self.assertEqual(result, persisted)
-        fetch_xml.assert_called_once_with("311000002")
-
-    def test_area_lookup_collects_target_consultants(self) -> None:
-        with mock.patch.object(
-            pipeline,
-            "_request_json",
-            return_value={
-                "SearchResults": [
-                    {
-                        "EnergyLabelSerialIdentifier": "311000001",
-                        "SubmitterConsultantName": "Første Konsulent",
-                    },
-                    {
-                        "EnergyLabelSerialIdentifier": "311999999",
-                        "SubmitterConsultantName": "Anden Konsulent",
-                    },
-                ]
-            },
-        ) as request_json:
-            result = pipeline._fetch_consultants_from_area(
-                {"311000001"},
-                "user",
-                "password",
-            )
-        self.assertEqual(result, {"311000001": "Første Konsulent"})
         request_json.assert_called_once()
 
     def test_unique_label_can_cover_multiple_buildings(self) -> None:

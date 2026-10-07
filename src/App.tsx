@@ -614,7 +614,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-[1500px] items-center justify-between px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
               <Building2 size={18} />
@@ -624,7 +624,16 @@ export default function App() {
               <div className="text-[11px] text-slate-500">Planlægning af bygningers energimærker</div>
             </div>
           </div>
-          <div className="hidden text-xs text-slate-500 sm:block">Datagrundlag · {sourceDate}</div>
+          <aside aria-label="Dataopdatering" className="flex max-w-full items-start gap-1.5 text-[11px] leading-4 text-slate-600 sm:ml-auto">
+            <CalendarClock size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <div className="sm:text-right">
+              <p className="font-medium text-slate-800">
+                Data sidst opdateret:{' '}
+                <time dateTime={dashboard.generatedAt}>{lastUpdated}</time> (dansk tid)
+              </p>
+              <p>Opdatering planlagt den 1. i hver måned.</p>
+            </div>
+          </aside>
         </div>
       </header>
 
@@ -658,20 +667,6 @@ export default function App() {
             </div>
           </div>
         </section>
-
-        <aside aria-label="Dataopdatering" className="flex items-start gap-2 text-xs leading-5 text-slate-600">
-          <CalendarClock size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <div>
-            <p className="font-medium text-slate-800">
-              Data sidst opdateret:{' '}
-              <time dateTime={dashboard.generatedAt}>{lastUpdated}</time> (dansk tid)
-            </p>
-            <p>
-              Energimærker opgjort pr. <time dateTime={dashboard.asOf}>{sourceDate}</time>.
-              {' '}Automatisk opdatering planlagt den 1. i hver måned.
-            </p>
-          </div>
-        </aside>
 
         <section
           className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm lg:flex-row lg:items-center lg:justify-between"

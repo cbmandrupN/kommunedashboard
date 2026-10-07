@@ -72,7 +72,12 @@ GitHub Action **Update EMOData** kører automatisk den første dag i hver måned
 kl. 03.17 UTC og kan også startes manuelt. Den henter seneste energimærker,
 matcher dem mod inventaret og slår energimærkningsfirmaet op via Energistyrelsens
 offentlige Tjek Energimærke. Derefter opdateres de kommunevise Excel-udtræk, og
-dashboardet genudgives. Excel-filerne indeholder adresse, postnummer, BFE,
+dashboardet genudgives. Noten "Data sidst opdateret" under sidens hovedoverskrift
+viser datasættets `generatedAt` i dansk tid, mens `asOf` viser energimærkernes
+opgørelsesdato. Noten ændres automatisk ved publicering af et nyt datasæt; den viser
+ikke tidspunktet for sidebesøget. Ejer- og BBR-oplysninger følger fortsat det
+importerede kommunale udtræk.
+Excel-filerne indeholder adresse, postnummer, BFE,
 bygningsnummer, opvarmet BBR-areal, EM-nummer, energimærkningsfirma, udløbsdato og status.
 De samme bygningsoplysninger genereres som kommunevise JSON-filer til den
 søgbare bygningsliste i dashboardet. Rapporten kan åbnes direkte fra

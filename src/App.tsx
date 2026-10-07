@@ -155,6 +155,14 @@ const numberFormat = new Intl.NumberFormat('da-DK', { maximumFractionDigits: 0 }
 const compactFormat = new Intl.NumberFormat('da-DK', { notation: 'compact', maximumFractionDigits: 1 })
 const percentageFormat = new Intl.NumberFormat('da-DK', { style: 'percent', maximumFractionDigits: 1 })
 const dateFormat = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'long', year: 'numeric' })
+const updateDateFormat = new Intl.DateTimeFormat('da-DK', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'Europe/Copenhagen',
+})
 const shortDateFormat = new Intl.DateTimeFormat('da-DK')
 const BUILDING_PAGE_SIZE = 100
 
@@ -566,6 +574,7 @@ export default function App() {
       : best
   ), YEARS[0])
   const sourceDate = dateFormat.format(new Date(`${dashboard.asOf}T12:00:00`))
+  const lastUpdated = updateDateFormat.format(new Date(dashboard.generatedAt))
   const selectedLabel = tableMode === 'expired'
     ? 'Udløbet mærke'
     : tableMode === 'unlabelled'
@@ -649,6 +658,20 @@ export default function App() {
             </div>
           </div>
         </section>
+
+        <aside aria-label="Dataopdatering" className="flex items-start gap-2 text-xs leading-5 text-slate-600">
+          <CalendarClock size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="font-medium text-slate-800">
+              Data sidst opdateret:{' '}
+              <time dateTime={dashboard.generatedAt}>{lastUpdated}</time> (dansk tid)
+            </p>
+            <p>
+              Energimærker opgjort pr. <time dateTime={dashboard.asOf}>{sourceDate}</time>.
+              {' '}Automatisk opdatering planlagt den 1. i hver måned.
+            </p>
+          </div>
+        </aside>
 
         <section
           className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm lg:flex-row lg:items-center lg:justify-between"

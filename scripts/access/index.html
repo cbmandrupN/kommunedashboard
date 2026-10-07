@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="da">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="description" content="Adgang til kommunedashboardet" />
+    <title>Kommunedashboard · Adgang</title>
+    <link rel="stylesheet" href="./access.css" />
+    <script type="module" src="./access.js"></script>
+  </head>
+  <body class="access-page">
+    <main id="access-panel">
+      <div class="access-brand">Kommunedashboard</div>
+      <h1>Åbn dashboardet</h1>
+      <p class="access-description">Indtast den fælles kode for at se kommunernes energimærker.</p>
+      <form id="access-form">
+        <label for="access-password">Adgangskode</label>
+        <input id="access-password" type="password" autocomplete="current-password" required
+          aria-describedby="access-error access-note" />
+        <button type="submit">Åbn dashboard</button>
+        <p id="access-error" role="alert" hidden></p>
+      </form>
+      <p id="access-note">Adgangen gælder, indtil du genindlæser eller lukker siden.</p>
+      <noscript>JavaScript skal være slået til for at åbne dashboardet.</noscript>
+    </main>
+    <div id="root" hidden></div>
+  </body>
+</html>

@@ -20,6 +20,7 @@ import {
   Search,
 } from 'lucide-react'
 import { Badge, Button, Card, Input, Select, cn } from './components/ui'
+import { fetchDashboardAsset } from './dashboard-assets'
 import dashboardJson from './data/dashboard-data.json'
 
 const YEARS = [
@@ -234,16 +235,20 @@ function buildingMatchesFilter(building: BuildingRecord, filter: BuildingFilter)
   return building.status === 'valid' && building.validTo.startsWith(filter)
 }
 
-function downloadMunicipalityExport(
+async function downloadMunicipalityExport(
   municipality: Municipality,
   areaScope: AreaScope,
   ownershipScope: OwnershipScope,
 ) {
-  const anchor = document.createElement('a')
   const directory = scopeDirectory('exports', areaScope, ownershipScope)
-  anchor.href = `${import.meta.env.BASE_URL}${directory}/${municipality.cvr}.xlsx`
+  const response = await fetchDashboardAsset(`${directory}/${municipality.cvr}.xlsx`)
+  if (!response.ok) throw new Error(`Excel-udtrækket kunne ikke hentes (${response.status})`)
+  const url = URL.createObjectURL(await response.blob())
+  const anchor = document.createElement('a')
+  anchor.href = url
   anchor.download = `${municipality.name.toLocaleLowerCase('da-DK').replaceAll(' ', '-')}-bygninger.xlsx`
   anchor.click()
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
 function scopeDirectory(
@@ -301,6 +306,8 @@ export default function App() {
   const [visibleBuildingCount, setVisibleBuildingCount] = useState(BUILDING_PAGE_SIZE)
   const [buildingLoading, setBuildingLoading] = useState(false)
   const [buildingError, setBuildingError] = useState<string | null>(null)
+  const [exportLoading, setExportLoading] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const expandedAreaScope = dashboard.expandedAreaScope
   const coOwnedScope = dashboard.coOwnedScope
   const expandedAreaAndCoOwnedScope = dashboard.expandedAreaAndCoOwnedScope
@@ -342,7 +349,7 @@ export default function App() {
     setBuildingRows([])
     setBuildingLoading(true)
     setBuildingError(null)
-    fetch(`${import.meta.env.BASE_URL}${buildingDataDirectory}/${selectedCvr}.json`, {
+    fetchDashboardAsset(`${buildingDataDirectory}/${selectedCvr}.json`, {
       signal: controller.signal,
     })
       .then((response) => {
@@ -624,7 +631,7 @@ export default function App() {
               <div className="text-[11px] text-slate-500">Planlægning af bygningers energimærker</div>
             </div>
           </div>
-          <aside aria-label="Dataopdatering" className="flex max-w-full items-start gap-1.5 text-[11px] leading-4 text-slate-600 sm:ml-auto">
+          <aside aria-label="Dataopdatering" className="order-2 flex max-w-full items-start gap-1.5 text-[11px] leading-4 text-slate-600 sm:order-1 sm:ml-auto">
             <CalendarClock size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
             <div className="sm:text-right">
               <p className="font-medium text-slate-800">
@@ -634,6 +641,17 @@ export default function App() {
               <p>Opdatering planlagt den 1. i hver måned.</p>
             </div>
           </aside>
+          {window.dashboardAccess && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="order-1 sm:order-2"
+              aria-label="Lås dashboard"
+              onClick={() => window.location.reload()}
+            >
+              Lås
+            </Button>
+          )}
         </div>
       </header>
 
@@ -802,13 +820,26 @@ export default function App() {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => downloadMunicipalityExport(
-                      selectedMunicipality,
-                      areaScope,
-                      ownershipScope,
-                    )}
+                    disabled={exportLoading}
+                    onClick={async () => {
+                      setExportLoading(true)
+                      setExportError(null)
+                      try {
+                        await downloadMunicipalityExport(
+                          selectedMunicipality,
+                          areaScope,
+                          ownershipScope,
+                        )
+                      } catch (error: unknown) {
+                        setExportError(
+                          error instanceof Error ? error.message : 'Excel-udtrækket kunne ikke hentes',
+                        )
+                      } finally {
+                        setExportLoading(false)
+                      }
+                    }}
                   >
-                    <Download size={14} /> Hent Excel-udtræk
+                    <Download size={14} /> {exportLoading ? 'Henter Excel-udtræk…' : 'Hent Excel-udtræk'}
                   </Button>
                   <Button variant="secondary" size="sm" onClick={() => selectMunicipality(null)}>
                     Vis alle kommuner
@@ -1087,6 +1118,10 @@ export default function App() {
               </div>
             </div>
           </Card>
+        )}
+
+        {exportError && (
+          <p role="alert" className="text-sm text-red-700">{exportError}. Prøv at hente udtrækket igen.</p>
         )}
 
         {selectedMunicipality && (

@@ -13,6 +13,26 @@ Opret en produktionsversion med `npm run build`. Den færdige statiske app ligge
 `dist` og kan deles via eksempelvis GitHub Pages, Azure Static Web Apps eller en intern
 webserver.
 
+## Adgangskode
+
+GitHub Pages-publiceringen viser først en kodeside. Deploy-workflowet kræver
+repository-secret `DASHBOARD_PASSWORD` og stopper, hvis den mangler. Koden må ikke
+gemmes i kildekode, JSON eller en `VITE_`-variabel.
+
+Efter det normale build krypterer `node scripts/protect-site.mjs` alle dashboardets
+filer, inklusive bygnings-JSON og Excel-udtræk, med AES-256-GCM og en nøgle afledt
+med PBKDF2-SHA-256 (600.000 iterationer og tilfældigt salt). Browseren dekrypterer
+kun efter korrekt kode; kommunefiler hentes efter behov. Koden gemmes ikke i
+browserlager. Genindlæsning, lukning eller **Lås dashboard** kræver koden igen.
+Lokale udviklingsbuild er uændrede og ikke kodebeskyttede.
+
+**Begrænsning:** Kildedata og tidligere versioner ligger i et offentligt
+GitHub-repository. Kodesiden beskytter den publicerede sides aktuelle filer,
+ikke offentlige repository-filer, gamle downloads eller tidligere klonede data.
+Fortrolige data kræver privat kildeopbevaring og hosting med serverbaseret
+adgangskontrol. En fælles kode giver heller ikke individuel adgang eller
+serverbaseret begrænsning af kodeforsøg.
+
 ## Datagrundlag
 
 Dashboardet tæller bygninger, hvor energimærket udløber, og viser deres udløbsår. Det viser

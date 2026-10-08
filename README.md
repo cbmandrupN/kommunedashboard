@@ -45,7 +45,10 @@ jf. § 19 i
 [lovbekendtgørelse nr. 1253 af 22. oktober 2025](https://www.retsinformation.dk/eli/lta/2025/1253).
 Dashboardets arealvælger kan desuden vise et foreløbigt scenarie fra 60 m², så bygninger
 på 60–250 m² kan indgå i planlægningen frem mod en mulig regelændring. Scenariet er ikke
-en angivelse af gældende ret. En separat ejerskabsvælger kan medtage bygninger, hvor
+en angivelse af gældende ret. Valget **60–250 m²** viser kun bygninger i dette interval,
+inklusive begge grænser, mens **Fra 60 m²** fortsat medtager de større bygninger.
+Valget gælder grafer, kommuneoversigt, firmaanalyse, bygningsliste og begge eksporttyper.
+En separat ejerskabsvælger kan medtage bygninger, hvor
 kommunen står under øvrige ejere i kildedata. Begge valg kan slås til og fra uafhængigt.
 Følgende frasorteres automatisk:
 
@@ -71,10 +74,12 @@ adresse, ejerskabstype, primær ejer samt kildens seneste EM-nummer og udløbsda
 Ejerandele og øvrige råfelter offentliggøres ikke. En bygning medtages både, når kommunen
 står som direkte ejer med sit eget CVR, og når kommunen er anført under øvrige ejere.
 Fællesejede bygninger kan derfor optræde hos mere end én kommune.
-Inventaret indeholder begge arealscenarier, mens de kommunevise filer skrives separat til
+Inventaret indeholder alle tre arealscenarier, mens de kommunevise filer skrives separat til
 `public/buildings`/`public/exports`, `public/buildings-from-60`/`public/exports-from-60`,
 `public/buildings-with-coowners`/`public/exports-with-coowners` og
-`public/buildings-from-60-with-coowners`/`public/exports-from-60-with-coowners`.
+`public/buildings-from-60-with-coowners`/`public/exports-from-60-with-coowners`,
+`public/buildings-60-250`/`public/exports-60-250` og
+`public/buildings-60-250-with-coowners`/`public/exports-60-250-with-coowners`.
 
 Et nyt ejerudtræk importeres lokalt:
 

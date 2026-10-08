@@ -755,6 +755,25 @@ def _aggregate_dashboard_scopes(
             if building.ownership_type == "direct"
         },
         "from-60-with-coowners": dict(buildings),
+        "60-250": {
+            key: building
+            for key, building in buildings.items()
+            if (
+                EXPANDED_PUBLIC_MINIMUM_AREA
+                <= building.area
+                <= PUBLIC_PERIODIC_AREA_THRESHOLD
+                and building.ownership_type == "direct"
+            )
+        },
+        "60-250-with-coowners": {
+            key: building
+            for key, building in buildings.items()
+            if (
+                EXPANDED_PUBLIC_MINIMUM_AREA
+                <= building.area
+                <= PUBLIC_PERIODIC_AREA_THRESHOLD
+            )
+        },
     }
     scope_assets = {
         name: (
@@ -790,7 +809,7 @@ def _aggregate_dashboard_scopes(
         )
 
     dashboard = scope_dashboards["current"]
-    dashboard["schemaVersion"] = 5
+    dashboard["schemaVersion"] = 6
     dashboard["coOwnedScope"] = {
         **_scope_payload(scope_dashboards["with-coowners"]),
         "includeCoOwners": True,
@@ -804,6 +823,17 @@ def _aggregate_dashboard_scopes(
         **_scope_payload(scope_dashboards["from-60-with-coowners"]),
         "minimumArea": EXPANDED_PUBLIC_MINIMUM_AREA,
         "maximumAddedArea": PUBLIC_PERIODIC_AREA_THRESHOLD,
+        "includeCoOwners": True,
+    }
+    dashboard["area60To250Scope"] = {
+        **_scope_payload(scope_dashboards["60-250"]),
+        "minimumArea": EXPANDED_PUBLIC_MINIMUM_AREA,
+        "maximumArea": PUBLIC_PERIODIC_AREA_THRESHOLD,
+    }
+    dashboard["area60To250AndCoOwnedScope"] = {
+        **_scope_payload(scope_dashboards["60-250-with-coowners"]),
+        "minimumArea": EXPANDED_PUBLIC_MINIMUM_AREA,
+        "maximumArea": PUBLIC_PERIODIC_AREA_THRESHOLD,
         "includeCoOwners": True,
     }
     dashboard["quality"]["expandedAreaScopeBuildings"] = len(
@@ -1283,6 +1313,8 @@ def write_dashboard(path: Path, dashboard: dict[str, Any]) -> None:
         "coOwnedScope",
         "expandedAreaScope",
         "expandedAreaAndCoOwnedScope",
+        "area60To250Scope",
+        "area60To250AndCoOwnedScope",
     )
     if any(not dashboard.get(name) for name in scope_names):
         raise ValueError("Refusing to write data without all dashboard scopes")
@@ -1296,6 +1328,26 @@ def write_dashboard(path: Path, dashboard: dict[str, Any]) -> None:
         < dashboard["expandedAreaScope"]["quality"]["inventoryBuildings"]
     ):
         raise ValueError("Combined scope cannot contain fewer buildings")
+    for band_name, large_scope, expanded_name in (
+        ("area60To250Scope", dashboard, "expandedAreaScope"),
+        ("area60To250AndCoOwnedScope", dashboard["coOwnedScope"], "expandedAreaAndCoOwnedScope"),
+    ):
+        band_scope = dashboard[band_name]
+        expanded_scope = dashboard[expanded_name]
+        if (
+            band_scope["quality"]["inventoryBuildings"]
+            + large_scope["quality"]["inventoryBuildings"]
+            != expanded_scope["quality"]["inventoryBuildings"]
+        ):
+            raise ValueError("Area band and large buildings must partition the expanded scope")
+        for metric in ("buildings", "area"):
+            for bucket in BUCKETS:
+                if (
+                    band_scope["totals"][metric][bucket]
+                    + large_scope["totals"][metric][bucket]
+                    != expanded_scope["totals"][metric][bucket]
+                ):
+                    raise ValueError("Area-band totals do not match the expanded scope")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(dashboard, ensure_ascii=False, indent=2) + "\n",

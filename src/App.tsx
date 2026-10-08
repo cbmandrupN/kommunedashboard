@@ -38,7 +38,7 @@ type TableMode = 'year' | 'expired' | 'unlabelled'
 type BuildingStatus = 'valid' | 'expired' | 'unlabelled'
 type BuildingFilter = 'all' | BuildingStatus | Year
 type ChartMetric = 'buildings' | 'area'
-type AreaScope = 'current' | 'from60'
+type AreaScope = 'current' | 'from60' | 'from60to250'
 type OwnershipScope = 'direct' | 'withCoowners'
 type CompanyExpiry = Record<Bucket | 'later', number>
 
@@ -136,6 +136,7 @@ type DashboardScope = {
 type DashboardScopeVariant = DashboardScope & {
   minimumArea?: number
   maximumAddedArea?: number
+  maximumArea?: number
   includeCoOwners?: boolean
 }
 
@@ -148,9 +149,32 @@ type DashboardData = DashboardScope & {
   coOwnedScope?: DashboardScopeVariant
   expandedAreaScope?: DashboardScopeVariant
   expandedAreaAndCoOwnedScope?: DashboardScopeVariant
+  area60To250Scope?: DashboardScopeVariant
+  area60To250AndCoOwnedScope?: DashboardScopeVariant
 }
 
 const dashboard = dashboardJson as DashboardData
+const DASHBOARD_SCOPES: Record<AreaScope, Record<OwnershipScope, DashboardScope | undefined>> = {
+  current: { direct: dashboard, withCoowners: dashboard.coOwnedScope },
+  from60: {
+    direct: dashboard.expandedAreaScope,
+    withCoowners: dashboard.expandedAreaAndCoOwnedScope,
+  },
+  from60to250: {
+    direct: dashboard.area60To250Scope,
+    withCoowners: dashboard.area60To250AndCoOwnedScope,
+  },
+}
+const AREA_SCOPE_LABELS: Record<AreaScope, string> = {
+  current: 'Over 250 m²',
+  from60: 'Fra 60 m²',
+  from60to250: '60–250 m²',
+}
+const AREA_SCOPE_OPTIONS = [
+  ['current', AREA_SCOPE_LABELS.current],
+  ['from60', AREA_SCOPE_LABELS.from60],
+  ['from60to250', AREA_SCOPE_LABELS.from60to250],
+] as const
 const EMPTY_COMPANIES: CompanyRecord[] = []
 const numberFormat = new Intl.NumberFormat('da-DK', { maximumFractionDigits: 0 })
 const compactFormat = new Intl.NumberFormat('da-DK', { notation: 'compact', maximumFractionDigits: 1 })
@@ -256,12 +280,10 @@ function scopeDirectory(
   areaScope: AreaScope,
   ownershipScope: OwnershipScope,
 ) {
-  if (areaScope === 'from60' && ownershipScope === 'withCoowners') {
-    return `${base}-from-60-with-coowners`
-  }
-  if (areaScope === 'from60') return `${base}-from-60`
-  if (ownershipScope === 'withCoowners') return `${base}-with-coowners`
-  return base
+  const areaSuffix = areaScope === 'from60' ? '-from-60'
+    : areaScope === 'from60to250' ? '-60-250' : ''
+  const ownershipSuffix = ownershipScope === 'withCoowners' ? '-with-coowners' : ''
+  return `${base}${areaSuffix}${ownershipSuffix}`
 }
 
 function downloadCsv(
@@ -280,7 +302,8 @@ function downloadCsv(
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  const scopeSuffix = areaScope === 'from60' ? '-fra-60-m2' : '-over-250-m2'
+  const scopeSuffix = areaScope === 'from60' ? '-fra-60-m2'
+    : areaScope === 'from60to250' ? '-60-250-m2' : '-over-250-m2'
   const ownershipSuffix = ownershipScope === 'withCoowners'
     ? '-med-medejerskab'
     : '-direkte-ejerskab'
@@ -309,17 +332,7 @@ export default function App() {
   const [exportLoading, setExportLoading] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const expandedAreaScope = dashboard.expandedAreaScope
-  const coOwnedScope = dashboard.coOwnedScope
-  const expandedAreaAndCoOwnedScope = dashboard.expandedAreaAndCoOwnedScope
-  const activeDashboard: DashboardScope = (
-    areaScope === 'from60' && ownershipScope === 'withCoowners'
-      ? expandedAreaAndCoOwnedScope
-      : areaScope === 'from60'
-        ? expandedAreaScope
-        : ownershipScope === 'withCoowners'
-          ? coOwnedScope
-          : dashboard
-  ) ?? dashboard
+  const activeDashboard = DASHBOARD_SCOPES[areaScope][ownershipScope] ?? dashboard
   const municipalities = activeDashboard.municipalities
   const companyAnalysis = activeDashboard.companyAnalysis
   const companies = companyAnalysis?.companies ?? EMPTY_COMPANIES
@@ -597,9 +610,7 @@ export default function App() {
     : tableMode === 'unlabelled'
       ? `${municipalitiesWithoutLabels} kommuner · ${formatBuildings(totalUnlabelledBuildings)} · intet mærke fundet`
       : `${affectedMunicipalities} kommuner · ${formatBuildings(totals[horizon])} · Andel af bygninger i det valgte scenarie`
-  const areaScopeLabel = areaScope === 'from60'
-    ? 'Fra 60 m²'
-    : 'Over 250 m²'
+  const areaScopeLabel = AREA_SCOPE_LABELS[areaScope]
   const ownershipScopeLabel = ownershipScope === 'withCoowners'
     ? 'Direkte ejer og medejer'
     : 'Kun direkte ejer'
@@ -698,21 +709,21 @@ export default function App() {
               <Badge color="amber">Muligt scenarie fra november</Badge>
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Tilvælg {numberFormat.format(addedAreaScopeBuildings)} direkte ejede bygninger
-              med 60–250 m² opvarmet BBR-areal eller bygninger, hvor kommunen står som medejer.
+              Se de {numberFormat.format(addedAreaScopeBuildings)} direkte ejede bygninger
+              med 60–250 m² opvarmet BBR-areal separat eller sammen med de større bygninger.
+              Medejerskab kan tilvælges uafhængigt.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
             <ScopeControl
               label="Opvarmet BBR-areal"
-              ariaLabel="Vælg grænse for opvarmet BBR-areal"
+              ariaLabel="Vælg interval for opvarmet BBR-areal"
               value={areaScope}
-              options={[
-                ['current', 'Over 250 m²'],
-                ['from60', 'Fra 60 m²'],
-              ]}
+              options={AREA_SCOPE_OPTIONS}
               onChange={(value) => setAreaScope(value as AreaScope)}
-              disabledValues={expandedAreaScope ? [] : ['from60']}
+              disabledValues={AREA_SCOPE_OPTIONS
+                .filter(([value]) => !DASHBOARD_SCOPES[value][ownershipScope])
+                .map(([value]) => value)}
             />
             <ScopeControl
               label="Ejerskab"
@@ -723,11 +734,7 @@ export default function App() {
                 ['withCoowners', 'Inkl. medejerskab'],
               ]}
               onChange={(value) => setOwnershipScope(value as OwnershipScope)}
-              disabledValues={
-                coOwnedScope && expandedAreaAndCoOwnedScope
-                  ? []
-                  : ['withCoowners']
-              }
+              disabledValues={DASHBOARD_SCOPES[areaScope].withCoowners ? [] : ['withCoowners']}
             />
           </div>
         </section>
@@ -1407,12 +1414,12 @@ function ScopeControl({
   disabledValues?: string[]
 }) {
   return (
-    <div>
+    <div className="min-w-0 max-w-full">
       <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
         {label}
       </div>
       <div
-        className="inline-flex w-fit rounded-lg border border-slate-200 bg-slate-100 p-1"
+        className="inline-flex w-fit max-w-full flex-wrap rounded-lg border border-slate-200 bg-slate-100 p-1"
         role="group"
         aria-label={ariaLabel}
       >
@@ -1424,7 +1431,7 @@ function ScopeControl({
             aria-pressed={value === optionValue}
             disabled={disabledValues.includes(optionValue)}
             className={cn(
-              'h-8 rounded-md px-3 text-xs font-semibold transition-colors',
+              'h-8 whitespace-nowrap rounded-md px-3 text-xs font-semibold transition-colors',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40',
               'disabled:cursor-not-allowed disabled:opacity-50',
               value === optionValue

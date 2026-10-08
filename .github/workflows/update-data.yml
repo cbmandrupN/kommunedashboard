@@ -45,7 +45,10 @@ jobs:
             public/exports-from-60 public/buildings-from-60 \
             public/exports-with-coowners public/buildings-with-coowners \
             public/exports-from-60-with-coowners \
-            public/buildings-from-60-with-coowners
+            public/buildings-from-60-with-coowners \
+            public/exports-60-250 public/buildings-60-250 \
+            public/exports-60-250-with-coowners \
+            public/buildings-60-250-with-coowners
           if git diff --cached --quiet; then
             echo "Data er uændret."
             exit 0

@@ -219,6 +219,69 @@ class PipelineTests(unittest.TestCase):
         )
         self.assertEqual(dashboard["quality"]["addedAreaScopeBuildings"], 1)
         self.assertEqual(dashboard["quality"]["availableCoOwnedBuildings"], 1)
+        self.assertEqual(
+            dashboard["area60To250Scope"]["totals"]["buildings"]["2027"], 1,
+        )
+        self.assertEqual(
+            dashboard["area60To250AndCoOwnedScope"]["totals"]["buildings"]["2027"], 2,
+        )
+
+    def test_area_band_includes_boundaries_and_scopes_shared_reports_and_exports(self) -> None:
+        buildings = {
+            ("1", "10", "1"): Building("1", "101", ("10",), "1", 60),
+            ("1", "10", "2"): Building("1", "101", ("10",), "2", 250),
+            ("1", "10", "3"): Building("1", "101", ("10",), "3", 251),
+            ("1", "20", "1"): Building("1", "101", ("20",), "1", 99),
+            ("1", "30", "1"): Building(
+                "1", "101", ("30",), "1", 200, ownership_type="co-owner",
+            ),
+        }
+        labels = {
+            "EM1": {
+                "validTo": date(2027, 1, 1),
+                "companyName": "Test Firma",
+                "owners": {"1": {
+                    key: building for key, building in buildings.items() if key[1] == "10"
+                }},
+            },
+            "EM2": {
+                "validTo": date(2027, 1, 2),
+                "companyName": "Test Firma",
+                "owners": {"1": {("1", "30", "1"): buildings[("1", "30", "1")]}},
+            },
+        }
+        dashboard, scopes = _aggregate_dashboard_scopes(
+            {"1": "Test Kommune"}, {"1": "101"}, labels, buildings,
+            date(2026, 10, 1), "fixture", {},
+        )
+        band = dashboard["area60To250Scope"]
+        self.assertEqual(band["quality"]["inventoryBuildings"], 3)
+        self.assertEqual(band["minimumArea"], 60)
+        self.assertEqual(band["maximumArea"], 250)
+        self.assertEqual(band["totals"]["buildings"]["2027"], 2)
+        self.assertEqual(band["totals"]["area"]["2027"], 310)
+        self.assertEqual(band["totalsMissingLabel"], {"buildings": 1, "area": 99})
+        self.assertEqual(band["companyAnalysis"]["attributedReports"], 1)
+        self.assertEqual(band["companyAnalysis"]["attributedBuildings"], 2)
+        self.assertEqual(band["companyAnalysis"]["attributedArea"], 310)
+        combined = dashboard["area60To250AndCoOwnedScope"]
+        self.assertEqual(combined["quality"]["inventoryBuildings"], 4)
+        self.assertEqual(combined["companyAnalysis"]["attributedReports"], 2)
+        self.assertEqual(combined["companyAnalysis"]["attributedArea"], 510)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            for scope, expected_count in (("60-250", 3), ("60-250-with-coowners", 4)):
+                scoped_buildings, scoped_labels = scopes[scope]
+                self.assertTrue(all(60 <= building.area <= 250 for building in scoped_buildings.values()))
+                output = Path(temporary_directory) / scope
+                write_building_data(output, {"1": "Test Kommune"}, scoped_buildings, scoped_labels, date(2026, 10, 1))
+                write_building_exports(output, {"1": "Test Kommune"}, scoped_buildings, scoped_labels, date(2026, 10, 1))
+                payload = json.loads((output / "1.json").read_text(encoding="utf-8"))
+                self.assertEqual(len(payload["buildings"]), expected_count)
+                with zipfile.ZipFile(output / "1.xlsx") as workbook:
+                    worksheet = workbook.read("xl/worksheets/sheet1.xml").decode()
+                self.assertNotIn("<v>251</v>", worksheet)
+                self.assertIn("<v>250</v>", worksheet)
+                self.assertIn("<v>60</v>", worksheet)
 
     def test_company_lookup_parses_em_number_and_company(self) -> None:
         content = """
@@ -454,7 +517,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(municipality["validLabelBuildings"], 1)
         self.assertEqual(municipality["unlabelled"]["buildings"], 1)
         self.assertEqual(result["quality"]["sourceLabelFallbackBuildings"], 1)
-        self.assertEqual(result["schemaVersion"], 5)
+        self.assertEqual(result["schemaVersion"], 6)
         self.assertEqual(result["companyAnalysis"]["attributedReports"], 1)
         self.assertEqual(
             result["companyAnalysis"]["companies"][0]["name"],

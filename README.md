@@ -93,7 +93,7 @@ python scripts\pipeline.py --as-of 2026-09-04 import-workbook `
   --building-data public\buildings
 ```
 
-GitHub Action **Update EMOData** kører automatisk den første dag i hver måned
+GitHub Action **Update EMOData** kører automatisk den 1. og 15. i hver måned
 kl. 03.17 UTC og kan også startes manuelt. Den henter seneste energimærker,
 matcher dem mod inventaret og slår energimærkningsfirmaet op via Energistyrelsens
 offentlige Tjek Energimærke. Derefter opdateres de kommunevise Excel-udtræk, og

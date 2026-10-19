@@ -649,7 +649,7 @@ export default function App() {
                 Data sidst opdateret:{' '}
                 <time dateTime={dashboard.generatedAt}>{lastUpdated}</time> (dansk tid)
               </p>
-              <p>Opdatering planlagt den 1. i hver måned.</p>
+              <p>Opdatering planlagt den 1. og 15. i hver måned.</p>
             </div>
           </aside>
           {window.dashboardAccess && (

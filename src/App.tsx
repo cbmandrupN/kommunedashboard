@@ -642,7 +642,7 @@ export default function App() {
               <div className="text-[11px] text-slate-500">Planlægning af bygningers energimærker</div>
             </div>
           </div>
-          <aside aria-label="Dataopdatering" className="order-2 flex max-w-full items-start gap-1.5 text-[11px] leading-4 text-slate-600 sm:order-1 sm:ml-auto">
+          <aside aria-label="Dataopdatering" className="flex max-w-full items-start gap-1.5 text-[11px] leading-4 text-slate-600 sm:ml-auto">
             <CalendarClock size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
             <div className="sm:text-right">
               <p className="font-medium text-slate-800">
@@ -652,17 +652,6 @@ export default function App() {
               <p>Opdatering planlagt den 1. og 15. i hver måned.</p>
             </div>
           </aside>
-          {window.dashboardAccess && (
-            <Button
-              variant="secondary"
-              size="sm"
-              className="order-1 sm:order-2"
-              aria-label="Lås dashboard"
-              onClick={() => window.location.reload()}
-            >
-              Lås
-            </Button>
-          )}
         </div>
       </header>
 

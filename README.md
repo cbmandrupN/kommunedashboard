@@ -23,7 +23,7 @@ Efter det normale build krypterer `node scripts/protect-site.mjs` alle dashboard
 filer, inklusive bygnings-JSON og Excel-udtræk, med AES-256-GCM og en nøgle afledt
 med PBKDF2-SHA-256 (600.000 iterationer og tilfældigt salt). Browseren dekrypterer
 kun efter korrekt kode; kommunefiler hentes efter behov. Koden gemmes ikke i
-browserlager. Genindlæsning, lukning eller **Lås dashboard** kræver koden igen.
+browserlager. Genindlæsning eller genåbning af siden kræver koden igen.
 Lokale udviklingsbuild er uændrede og ikke kodebeskyttede.
 
 **Begrænsning:** Kildedata og tidligere versioner ligger i et offentligt

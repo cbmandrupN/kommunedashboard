@@ -343,6 +343,7 @@ export default function App() {
   )
   const totals = activeDashboard.totals.buildings
   const selectedMunicipality = municipalities.find((row) => row.cvr === selectedCvr)
+  const summaryBuildings = selectedMunicipality?.metrics.buildings ?? totals
   const chartMetrics = selectedMunicipality?.metrics[chartMetric]
     ?? activeDashboard.totals[chartMetric]
   const buildingDataDirectory = scopeDirectory(
@@ -590,10 +591,11 @@ export default function App() {
     (row) => unlabelledFor(row) > 0,
   ).length
   const nextPeak = YEARS.reduce((best, year) => (
-    activeDashboard.totals.buildings[year] > activeDashboard.totals.buildings[best]
+    summaryBuildings[year] > summaryBuildings[best]
       ? year
       : best
   ), YEARS[0])
+  const hasUpcomingExpiry = summaryBuildings[nextPeak] > 0
   const sourceDate = dateFormat.format(new Date(`${dashboard.asOf}T12:00:00`))
   const lastUpdated = updateDateFormat.format(new Date(dashboard.generatedAt))
   const selectedLabel = tableMode === 'expired'
@@ -729,12 +731,18 @@ export default function App() {
           </div>
         </section>
 
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <section
+          aria-label={selectedMunicipality
+            ? `Nøgletal for ${selectedMunicipality.name}`
+            : 'Nøgletal for alle kommuner'}
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"
+        >
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløber i 2026"
-            value={formatBuildings(activeDashboard.totals.buildings['2026'])}
-            note={`${municipalities.filter((row) => row.metrics.buildings['2026'] > 0).length} kommuner`}
+            value={formatBuildings(summaryBuildings['2026'])}
+            note={selectedMunicipality?.name
+              ?? `${municipalities.filter((row) => row.metrics.buildings['2026'] > 0).length} kommuner`}
             tone="orange"
             active={tableMode === 'year' && horizon === '2026'}
             onClick={() => selectHorizon('2026')}
@@ -742,8 +750,9 @@ export default function App() {
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløber i 2027"
-            value={formatBuildings(activeDashboard.totals.buildings['2027'])}
-            note={`${municipalities.filter((row) => row.metrics.buildings['2027'] > 0).length} kommuner`}
+            value={formatBuildings(summaryBuildings['2027'])}
+            note={selectedMunicipality?.name
+              ?? `${municipalities.filter((row) => row.metrics.buildings['2027'] > 0).length} kommuner`}
             tone="yellow"
             active={tableMode === 'year' && horizon === '2027'}
             onClick={() => selectHorizon('2027')}
@@ -751,17 +760,22 @@ export default function App() {
           <DeadlineCard
             icon={<CheckCircle2 size={18} />}
             label="Største kommende år"
-            value={`${nextPeak} · ${numberFormat.format(activeDashboard.totals.buildings[nextPeak])}`}
-            note="bygninger, hvor energimærket udløber"
+            value={hasUpcomingExpiry
+              ? `${nextPeak} · ${numberFormat.format(summaryBuildings[nextPeak])}`
+              : 'Ingen udløb'}
+            note={hasUpcomingExpiry
+              ? selectedMunicipality?.name ?? 'bygninger, hvor energimærket udløber'
+              : `${selectedMunicipality ? `${selectedMunicipality.name} · ` : ''}2026–2037`}
             tone="green"
-            active={tableMode === 'year' && horizon === nextPeak}
+            active={hasUpcomingExpiry && tableMode === 'year' && horizon === nextPeak}
+            disabled={!hasUpcomingExpiry}
             onClick={() => selectHorizon(nextPeak)}
           />
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløbet mærke"
-            value={formatBuildings(totals.expired)}
-            note={`${municipalitiesWithExpiredLabels} kommuner`}
+            value={formatBuildings(summaryBuildings.expired)}
+            note={selectedMunicipality?.name ?? `${municipalitiesWithExpiredLabels} kommuner`}
             tone="orange"
             active={tableMode === 'expired'}
             onClick={selectExpiredLabels}
@@ -769,8 +783,10 @@ export default function App() {
           <DeadlineCard
             icon={<CircleAlert size={18} />}
             label="Mangler mærke"
-            value={formatBuildings(totalUnlabelledBuildings)}
-            note={`${municipalitiesWithoutLabels} kommuner · intet mærke fundet`}
+            value={formatBuildings(selectedMunicipality
+              ? unlabelledFor(selectedMunicipality)
+              : totalUnlabelledBuildings)}
+            note={`${selectedMunicipality?.name ?? `${municipalitiesWithoutLabels} kommuner`} · intet mærke fundet`}
             tone="red"
             active={tableMode === 'unlabelled'}
             onClick={selectUnlabelled}
@@ -1469,6 +1485,7 @@ function DeadlineCard({
   note,
   tone,
   active,
+  disabled = false,
   onClick,
 }: {
   icon: React.ReactNode
@@ -1477,6 +1494,7 @@ function DeadlineCard({
   note: string
   tone: 'orange' | 'yellow' | 'green' | 'red'
   active: boolean
+  disabled?: boolean
   onClick: () => void
 }) {
   const tones = {
@@ -1486,7 +1504,7 @@ function DeadlineCard({
     red: 'bg-red-50 text-red-700',
   }
   return (
-    <button onClick={onClick} className="text-left">
+    <button onClick={onClick} disabled={disabled} className="text-left">
       <Card className={cn('h-full p-4 transition-all sm:p-5', active ? 'border-blue-500 ring-2 ring-blue-500/15' : 'hover:border-slate-300 hover:shadow-md')}>
         <div className={cn('mb-3 flex h-9 w-9 items-center justify-center rounded-lg', tones[tone])}>{icon}</div>
         <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>

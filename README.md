@@ -68,6 +68,8 @@ eller klimaskærm og andre konkrete undtagelser kan ikke afgøres af udtrækket 
 kontrol. Overblikket er derfor et screeningsværktøj og ikke en juridisk afgørelse.
 Den valgte afgrænsning og antal bygninger vises kompakt over grafen.
 **Om datagrundlaget** kan foldes ud for beregningsregler, kilder og forbehold.
+De fem nøgletal følger den valgte kommune og areal-/ejerskabsfiltrene, ligesom grafen.
+**Vis alle kommuner** skifter nøgletallene tilbage til landstal.
 
 Den komprimerede `data/municipality-inventory.json.gz` indeholder kun de felter, der skal
 bruges til matchning og udtræk: kommune, CVR, kommunekode, BFE, bygningsnummer, opvarmet

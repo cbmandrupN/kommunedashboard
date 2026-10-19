@@ -66,6 +66,8 @@ til rumklima; eventuel køling kan ikke udledes af kildedata.
 Nedrivningshensigt, opvarmet areal under 60 m²/højst 25 %, væsentlige mangler i varmeanlæg
 eller klimaskærm og andre konkrete undtagelser kan ikke afgøres af udtrækket og kræver manuel
 kontrol. Overblikket er derfor et screeningsværktøj og ikke en juridisk afgørelse.
+Den valgte afgrænsning og antal bygninger vises kompakt over grafen.
+**Om datagrundlaget** kan foldes ud for beregningsregler, kilder og forbehold.
 
 Den komprimerede `data/municipality-inventory.json.gz` indeholder kun de felter, der skal
 bruges til matchning og udtræk: kommune, CVR, kommunekode, BFE, bygningsnummer, opvarmet

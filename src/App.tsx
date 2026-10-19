@@ -12,6 +12,7 @@ import {
 import {
   Building2,
   CalendarClock,
+  ChevronDown,
   CheckCircle2,
   CircleAlert,
   Download,
@@ -776,25 +777,33 @@ export default function App() {
           />
         </section>
 
-        <Card className="border-blue-200 bg-blue-50/60 px-5 py-4 text-xs leading-5 text-blue-950">
-          <span className="font-semibold">
-            Automatisk afgrænsning · {areaScopeLabel} · {ownershipScopeLabel}:
-          </span>{' '}
-          {numberFormat.format(activeDashboard.quality.inventoryBuildings)} kommunale bygninger er medtaget.
-          {' '}Arealet er beregnet som boligareal plus erhvervsareal registreret i BBR.
-          Anvendelseskoder, fredede bygninger og bygninger registreret uden varmeinstallation er frasorteret efter{' '}
-          <a className="font-medium text-blue-700 underline" href="https://www.hbemo.dk/vejledning/faq/bekendtgoerelse-om-energimaerkning-af-bygninger" target="_blank" rel="noreferrer">HBEMO</a>
-          {' '}og den gældende{' '}
-          <a className="font-medium text-blue-700 underline" href="https://www.retsinformation.dk/eli/lta/2023/549" target="_blank" rel="noreferrer">bekendtgørelse</a>.
-          {activeDashboard.quality.sourceLabelFallbackBuildings
-            ? ` For ${numberFormat.format(activeDashboard.quality.sourceLabelFallbackBuildings)} bygninger uden EMOData-match anvendes mærket fra det oprindelige kommunale udtræk.`
-            : ''}
-          {' '}Direkte kommunalt ejede bygninger er medtaget.
-          {activeDashboard.quality.coOwnedBuildings
-            ? ` Derudover er ${numberFormat.format(activeDashboard.quality.coOwnedBuildings)} bygninger medtaget via et kommunalt medejerskab.`
-            : ''}
-          {' '}Forhold som nedrivningshensigt, opvarmet delareal og mangler i klimaskærmen kræver manuel kontrol.
-        </Card>
+        <details className="group text-xs leading-5 text-slate-600">
+          <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-600 [&::-webkit-details-marker]:hidden">
+            <span>
+              {numberFormat.format(activeDashboard.quality.inventoryBuildings)} bygninger
+              {' · '}{areaScopeLabel}{' · '}{ownershipScopeLabel}
+            </span>
+            <span className="inline-flex items-center gap-1 font-medium text-blue-700">
+              Om datagrundlaget
+              <ChevronDown size={14} className="group-open:rotate-180" aria-hidden="true" />
+            </span>
+          </summary>
+          <div className="mt-2 max-w-4xl">
+            Arealet er beregnet som boligareal plus erhvervsareal registreret i BBR.
+            Anvendelseskoder, fredede bygninger og bygninger registreret uden varmeinstallation er frasorteret efter{' '}
+            <a className="font-medium text-blue-700 underline" href="https://www.hbemo.dk/vejledning/faq/bekendtgoerelse-om-energimaerkning-af-bygninger" target="_blank" rel="noreferrer">HBEMO</a>
+            {' '}og den gældende{' '}
+            <a className="font-medium text-blue-700 underline" href="https://www.retsinformation.dk/eli/lta/2023/549" target="_blank" rel="noreferrer">bekendtgørelse</a>.
+            {activeDashboard.quality.sourceLabelFallbackBuildings
+              ? ` For ${numberFormat.format(activeDashboard.quality.sourceLabelFallbackBuildings)} bygninger uden EMOData-match anvendes mærket fra det oprindelige kommunale udtræk.`
+              : ''}
+            {' '}Direkte kommunalt ejede bygninger er medtaget.
+            {activeDashboard.quality.coOwnedBuildings
+              ? ` Derudover er ${numberFormat.format(activeDashboard.quality.coOwnedBuildings)} bygninger medtaget via et kommunalt medejerskab.`
+              : ''}
+            {' '}Forhold som nedrivningshensigt, opvarmet delareal og mangler i klimaskærmen kræver manuel kontrol.
+          </div>
+        </details>
 
         <Card className="p-5">
           <div className="mb-5 flex flex-wrap items-start justify-between gap-3">

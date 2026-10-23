@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { Badge, Button, Card, Input, Select, cn } from './components/ui'
 import { fetchDashboardAsset } from './dashboard-assets'
+import MunicipalityMap from './MunicipalityMap'
 import dashboardJson from './data/dashboard-data.json'
 
 const YEARS = [
@@ -314,6 +315,7 @@ function downloadCsv(
 }
 
 export default function App() {
+  const [view, setView] = useState<'overview' | 'map'>('overview')
   const [horizon, setHorizon] = useState<Horizon>('2026')
   const [areaScope, setAreaScope] = useState<AreaScope>('current')
   const [ownershipScope, setOwnershipScope] = useState<OwnershipScope>('direct')
@@ -669,7 +671,9 @@ export default function App() {
                 </div>
                 <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Hvornår udløber bygningernes energimærker?</h1>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                  Klik på et år og se de kommuner, der har flest bygninger, hvor energimærket udløber.
+                  {view === 'map'
+                    ? 'Se kommunernes energimærker på Danmarkskortet, og vælg en kommune for at undersøge dens bygninger.'
+                    : 'Klik på et år og se de kommuner, der har flest bygninger, hvor energimærket udløber.'}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -688,6 +692,21 @@ export default function App() {
             </div>
           </div>
         </section>
+
+        <nav aria-label="Dashboardvisning" className="flex gap-1 border-b border-slate-200">
+          {([['overview', 'Oversigt'], ['map', 'Kort']] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={view === value}
+              onClick={() => setView(value)}
+              className={cn(
+                'border-b-2 px-5 py-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
+                view === value ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600 hover:text-slate-950',
+              )}
+            >{label}</button>
+          ))}
+        </nav>
 
         <section
           className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm lg:flex-row lg:items-center lg:justify-between"
@@ -731,6 +750,25 @@ export default function App() {
           </div>
         </section>
 
+        {view === 'map' && (
+          <MunicipalityMap
+            municipalities={municipalities}
+            selectedCvr={selectedCvr}
+            directory={buildingDataDirectory}
+            asOf={dashboard.asOf}
+            generatedAt={dashboard.generatedAt}
+            onSelect={selectMunicipality}
+            onBuildings={() => {
+              setBuildingFilter('all')
+              setBuildingCompanyFilter('')
+              setBuildingQuery('')
+              setView('overview')
+              requestAnimationFrame(() => document.getElementById('bygningsliste')?.scrollIntoView({ block: 'start' }))
+            }}
+          />
+        )}
+
+        <div hidden={view !== 'overview'} className={view === 'overview' ? 'flex flex-col gap-5' : undefined}>
         <section
           aria-label={selectedMunicipality
             ? `Nøgletal for ${selectedMunicipality.name}`
@@ -1402,6 +1440,7 @@ export default function App() {
             </div>
           )}
         </Card>
+        </div>
       </main>
 
       <footer className="mx-auto flex max-w-[1500px] flex-wrap justify-between gap-2 px-6 pb-8 pt-2 text-xs text-slate-400">

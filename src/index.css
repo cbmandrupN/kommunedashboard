@@ -65,3 +65,14 @@ tbody tr.selected-municipality td {
 tbody tr.selected-company td {
   background: #eff6ff;
 }
+
+.municipality-shape {
+  cursor: pointer;
+}
+
+.municipality-shape:hover,
+.municipality-shape:focus-visible {
+  outline: none;
+  stroke: #1d4ed8;
+  stroke-width: 2.5;
+}

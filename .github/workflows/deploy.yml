@@ -33,6 +33,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run test:access
+      - run: npm run test:map
       - run: npm run build
       - name: Protect dashboard and downloads
         run: node scripts/protect-site.mjs

@@ -20,6 +20,7 @@ test('protects the app, municipality JSON and Excel with authenticated encryptio
     const fixtures = {
       'assets/app.js': 'window.dashboardStarted = true',
       'assets/app.css': 'body { color: red }',
+      'map-summary.json': '{"scopes":{"buildings":{"validArea":"private-map-data"}}}',
       'buildings/29189579.json': '{"buildings":["private-test-data"]}',
       'exports-from-60-with-coowners/29189579.xlsx': Buffer.from([80, 75, 3, 4, 255, 0, 128]),
     }
@@ -63,6 +64,7 @@ test('protects the app, municipality JSON and Excel with authenticated encryptio
       const bytes = await readFile(path.join(dist, 'protected', filename))
       assert.equal(bytes.includes(Buffer.from(password)), false)
       assert.equal(bytes.includes(Buffer.from('private-test-data')), false)
+      assert.equal(bytes.includes(Buffer.from('private-map-data')), false)
     }
   } finally {
     await rm(temporary, { recursive: true, force: true })

@@ -71,6 +71,29 @@ Den valgte afgrænsning og antal bygninger vises kompakt over grafen.
 De fem nøgletal følger den valgte kommune og areal-/ejerskabsfiltrene, ligesom grafen.
 **Vis alle kommuner** skifter nøgletallene tilbage til landstal.
 
+Fanen **Kort** viser alle 98 kommuner på et Danmarkskort. Farverne angiver gyldigt
+energimærket opvarmet BBR-areal divideret med hele det medtagne opvarmede BBR-areal,
+ikke andelen af bygninger. Areal og ejerskab følger de samme filtre som **Oversigt**.
+Vælg en kommune med mus, tastatur eller kommunelisten for at se status i antal og m²
+samt udløbsår. **Vis bygningsliste** åbner kommunens bygninger i oversigten uden
+års- eller firmafilter. Zoomknapper og træk i det forstørrede kort gør små kommuner
+tilgængelige. Grå angiver, at der ikke er opvarmet areal i den valgte afgrænsning.
+
+Kortsummerne genereres automatisk før udviklingsserver og build fra de samme
+kommunevise bygningsfiler som bygningslisten. Også gyldige mærker efter 2037 indgår.
+Build afbrydes ved uoverensstemmelse mellem dashboardets snapshot/antal og filerne.
+`public/map-summary.json` er genereret og krypteres sammen med resten af siden.
+Ingen kortdata hentes fra en tredjepart, når en kollega åbner dashboardet.
+Kommunegrænserne i `data/municipalities.geojson` er
+[geoBoundaries DNK ADM2, release 9469f09](https://github.com/wmgeolab/geoBoundaries/tree/9469f09/releaseData/gbOpen/DNK/ADM2),
+repræsenterer 2018 og er forenklet til oversigtsbrug, ikke ejendomsafgrænsning.
+[Kildens metadata](https://www.geoboundaries.org/api/current/gbOpen/DNK/ADM2/)
+angiver Public Domain og geoBoundaries/Wikimedia Commons som kilde.
+Importen matcher de 98 navne entydigt til dashboardets kommunekoder, med eksplicitte
+navnevarianter for København, Bornholm, Nordfyn og Vesthimmerland. Alle efterfølgende
+joins mellem kort og dashboard bruger kommunekode. `npm run test:map` kontrollerer
+beregninger, intervalgrænser og geometri.
+
 Den komprimerede `data/municipality-inventory.json.gz` indeholder kun de felter, der skal
 bruges til matchning og udtræk: kommune, CVR, kommunekode, BFE, bygningsnummer, opvarmet
 BBR-areal (boligareal plus erhvervsareal),

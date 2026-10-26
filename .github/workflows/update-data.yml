@@ -1,29 +1,19 @@
-name: Collect nationwide market activity
-
+name: Check geographic API response
 on:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  collect:
+  probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: python -m unittest discover -s tests -p test_market_activity.py -v
-      - name: Collect all-owner market snapshot since January 2025
+      - name: Inspect two geographic response envelopes
         env:
           EMODATA_USERNAME: ${{ secrets.EMODATA_USERNAME }}
           EMODATA_PASSWORD: ${{ secrets.EMODATA_PASSWORD }}
-        run: python scripts/market_activity.py --output public/market-activity.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: market-activity
-          path: public/market-activity.json
-          retention-days: 3
-          if-no-files-found: error
+        run: python scripts/market_probe.py

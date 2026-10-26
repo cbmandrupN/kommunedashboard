@@ -132,7 +132,10 @@ def collect(as_of: date, request, progress=print) -> dict:
         rows = payload.get("SearchResults")
         status = payload.get("ResponseStatus")
         if not isinstance(rows, list) or not isinstance(status, dict):
-            raise RuntimeError(f"Unexpected nationwide response on page {page}")
+            raise RuntimeError(
+                f"Unexpected nationwide response on page {page}: "
+                f"keys={sorted(payload)}, status={json.dumps(status)}"
+            )
         if rows and status.get("Status") != "RESULT_OK":
             raise RuntimeError(f"EMOData rejected page {page}: {status.get('Status')}")
         if not rows and status.get("Status") not in {

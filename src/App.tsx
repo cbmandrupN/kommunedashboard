@@ -24,6 +24,7 @@ import { Badge, Button, Card, Input, Select, cn } from './components/ui'
 import { fetchDashboardAsset } from './dashboard-assets'
 import MunicipalityMap from './MunicipalityMap'
 import MarketActivity from './MarketActivity'
+import UpdateReport from './UpdateReport'
 import dashboardJson from './data/dashboard-data.json'
 
 const YEARS = [
@@ -863,6 +864,14 @@ export default function App() {
             {' '}Forhold som nedrivningshensigt, opvarmet delareal og mangler i klimaskærmen kræver manuel kontrol.
           </div>
         </details>
+
+        {view === 'overview' && <UpdateReport
+          directory={buildingDataDirectory}
+          selectedCvr={selectedCvr}
+          municipalityName={selectedMunicipality?.name}
+          generatedAt={dashboard.generatedAt}
+          asOf={dashboard.asOf}
+        />}
 
         <Card className="p-5">
           <div className="mb-5 flex flex-wrap items-start justify-between gap-3">

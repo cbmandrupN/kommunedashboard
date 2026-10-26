@@ -217,3 +217,38 @@ python scripts\market_activity.py --output public\market-activity.json
 python -m unittest discover -s tests -p test_market_activity.py -v
 npm run test:market
 ```
+
+### Rapport siden sidste kommuneopdatering
+
+Modulet **Siden sidste opdatering** i Oversigt sammenligner de to seneste
+kommunale dataudtræk og følger kommune-, ejer- og arealvalget, ikke udløbsåret.
+Det tæller bygninger med først fundet mærke, skiftet rapportnummer, ændring fra
+gyldigt til udløbet samt mærker, der ikke længere findes i udtrækket. Tilføjede
+og udgåede bygninger og øvrige dataændringer vises særskilt, ikke som nye opgaver.
+Detaljerne viser før/nu og firmaerne på først fundne og skiftede mærker.
+Rapportnumre deduplikeres pr. registreret firmanavn i firmatabellen.
+
+Det er observerede ændringer i kommunernes registreringer, **ikke** nye opgaver,
+vundne udbud eller aktivitet i hele markedet. Nye datamatch og rettelser kan ændre
+en bygnings mærke uden en ny energimærkning. En forsvundet registrering er ikke
+en dokumenteret annullering. Firmaoplysninger uden nyt rapportnummer er øvrige
+dataændringer, ikke firmaaktivitet. Sammenligningsdatoer vises med dansk tid.
+
+`scripts/update_report.py` matcher bygninger på kommunenummer, normaliseret
+BFE-liste og bygningsnummer inden for hver kommunes CVR og afgrænsning.
+Manglende eller dublerede nøgler, forkert snapshot, ændret kommunedækning eller
+uoverensstemmende bygningstal afbryder genereringen. Et nyt scope uden historik
+markeres som ikke sammenligneligt; det vises ikke som nul ændringer.
+
+**Update EMOData** gemmer forrige snapshot midlertidigt før indhentning og
+genererer derefter `public/update-report.json`. Kun forskellene og de to
+snapshotdatoer gemmes permanent. Rapporten committes sammen med kommunedata
+og krypteres ved publicering; markedsopdateringen ændrer ikke kommunerapporten.
+Buildet afviser en rapport, der ikke matcher de aktuelle kommunedata.
+Første rapport sammenligner de faktiske udtræk fra 1. og 19. oktober 2026.
+
+```powershell
+python scripts\update_report.py --previous tidligere-snapshot --output public\update-report.json
+python -m unittest discover -s tests -p test_update_report.py -v
+npm run test:report
+```

@@ -22,6 +22,7 @@ test('protects the app, municipality JSON and Excel with authenticated encryptio
       'assets/app.css': 'body { color: red }',
       'map-summary.json': '{"scopes":{"buildings":{"validArea":"private-map-data"}}}',
       'market-activity.json': '{"companies":["private-market-data"]}',
+      'update-report.json': '{"scopes":["private-update-report"]}',
       'buildings/29189579.json': '{"buildings":["private-test-data"]}',
       'exports-from-60-with-coowners/29189579.xlsx': Buffer.from([80, 75, 3, 4, 255, 0, 128]),
     }
@@ -67,6 +68,7 @@ test('protects the app, municipality JSON and Excel with authenticated encryptio
       assert.equal(bytes.includes(Buffer.from('private-test-data')), false)
       assert.equal(bytes.includes(Buffer.from('private-map-data')), false)
       assert.equal(bytes.includes(Buffer.from('private-market-data')), false)
+      assert.equal(bytes.includes(Buffer.from('private-update-report')), false)
     }
   } finally {
     await rm(temporary, { recursive: true, force: true })

@@ -20,6 +20,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - name: Preserve previous municipal snapshot
+        run: |
+          mkdir -p "$RUNNER_TEMP/municipal-previous/src/data" "$RUNNER_TEMP/municipal-previous/public"
+          cp src/data/dashboard-data.json "$RUNNER_TEMP/municipal-previous/src/data/"
+          cp -a public/buildings public/buildings-with-coowners \
+            public/buildings-from-60 public/buildings-from-60-with-coowners \
+            public/buildings-60-250 public/buildings-60-250-with-coowners \
+            "$RUNNER_TEMP/municipal-previous/public/"
       - name: Generate dashboard data
         env:
           EMODATA_USERNAME: ${{ secrets.EMODATA_USERNAME }}
@@ -30,6 +38,11 @@ jobs:
             --dashboard src/data/dashboard-data.json \
             --exports public/exports \
             --building-data public/buildings | tee update-summary.json
+      - name: Compare with previous municipal snapshot
+        run: |
+          python scripts/update_report.py \
+            --previous "$RUNNER_TEMP/municipal-previous" \
+            --output public/update-report.json | tee change-summary.json
       - name: Test generated data
         run: python -m unittest discover -s tests -v
       - name: Write job summary
@@ -38,9 +51,13 @@ jobs:
           echo '```json' >> "$GITHUB_STEP_SUMMARY"
           cat update-summary.json >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "### Ændringer siden sidste opdatering" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat change-summary.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
       - name: Commit updated data
         run: |
-          git add src/data/dashboard-data.json \
+          git add src/data/dashboard-data.json public/update-report.json \
             public/exports public/buildings \
             public/exports-from-60 public/buildings-from-60 \
             public/exports-with-coowners public/buildings-with-coowners \

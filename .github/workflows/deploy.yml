@@ -35,6 +35,7 @@ jobs:
       - run: npm run test:access
       - run: npm run test:map
       - run: npm run test:market
+      - run: npm run test:report
       - run: npm run build
       - name: Protect dashboard and downloads
         run: node scripts/protect-site.mjs

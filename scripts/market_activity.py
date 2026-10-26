@@ -17,7 +17,7 @@ from pipeline import _request_json
 START_DATE = date(2025, 1, 1)
 PAGE_SIZE = 1000
 WORKERS = 4
-MAX_PAGES = 2000
+MAX_PAGES = 300
 ENDPOINT = "https://emoweb.dk/emodata/EMOData.svc/GetEnergyLabelInArea"
 
 
@@ -118,72 +118,86 @@ def summarize(reports: list[dict], as_of: date) -> dict:
 
 def collect(as_of: date, request, progress=print) -> dict:
     reports = {}
-    fingerprints = set()
     scanned = 0
     page_count = 0
+    # EMOData caps each geographic request at about 0.60 square degrees.
+    tiles = [
+        (latitude / 2, longitude, latitude / 2 + 0.5, longitude + 1)
+        for latitude in range(108, 118)
+        for longitude in range(7, 16)
+    ]
 
-    def fetch_page(page):
-        query = urllib.parse.urlencode({
-            "coordinateX1": 59, "coordinateY1": 7,
-            "coordinateX2": 54, "coordinateY2": 16,
-            "pageNumber": page, "pageSize": PAGE_SIZE,
-        })
-        payload = request(f"{ENDPOINT}?{query}")
-        rows = payload.get("SearchResults")
-        status = payload.get("ResponseStatus")
-        if not isinstance(rows, list) or not isinstance(status, dict):
-            raise RuntimeError(
-                f"Unexpected nationwide response on page {page}: "
-                f"keys={sorted(payload)}, status={json.dumps(status)}"
-            )
-        if rows and status.get("Status") != "RESULT_OK":
-            raise RuntimeError(f"EMOData rejected page {page}: {status.get('Status')}")
-        if not rows and status.get("Status") not in {
-            "RESULT_OK", "NO_RESULT", "NO_RESULTS", "RESULT_NOT_FOUND", "RESULT_EMPTY",
-        }:
-            raise RuntimeError(f"EMOData ended with unexpected status: {status.get('Status')}")
-        time.sleep(0.4)
-        return rows
-
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        for first in range(1, MAX_PAGES + 1, WORKERS):
-            pages = list(pool.map(fetch_page, range(first, first + WORKERS)))
-            ended = False
-            for rows in pages:
-                if not rows:
-                    ended = True
-                    continue
-                if ended:
-                    raise RuntimeError("Pagination returned records after an empty page")
+    def fetch_tile(tile):
+        south, west, north, east = tile
+        tile_reports = {}
+        fingerprints = set()
+        tile_scanned = 0
+        for page in range(1, MAX_PAGES + 1):
+            query = urllib.parse.urlencode({
+                "coordinateX1": south, "coordinateY1": west,
+                "coordinateX2": north, "coordinateY2": east,
+                "pageNumber": page, "pageSize": PAGE_SIZE,
+            })
+            payload = request(f"{ENDPOINT}?{query}")
+            rows = payload.get("SearchResults")
+            status = payload.get("ResponseStatus")
+            if not isinstance(status, dict):
+                raise RuntimeError(f"Missing geographic response status: {tile}, {page}")
+            if rows is None and status.get("Status") in {"NO_RESULT", "NO_RESULTS", "RESULT_NOT_FOUND", "RESULT_EMPTY"}:
+                rows = []
+            if not isinstance(rows, list):
+                raise RuntimeError(
+                    f"Unexpected response: tile={tile}, page={page}, status={json.dumps(status)}"
+                )
+            if rows and status.get("Status") != "RESULT_OK":
+                raise RuntimeError(f"EMOData rejected {tile}, {page}: {status.get('Status')}")
+            if not rows and status.get("Status") not in {
+                "RESULT_OK", "NO_RESULT", "NO_RESULTS", "RESULT_NOT_FOUND", "RESULT_EMPTY",
+            }:
+                raise RuntimeError(f"Unexpected end of results: {json.dumps(status)}")
+            if rows:
                 fingerprint = hashlib.sha256(
                     json.dumps(rows, sort_keys=True).encode()
                 ).hexdigest()
                 if fingerprint in fingerprints:
                     raise RuntimeError("Pagination repeated a page")
                 fingerprints.add(fingerprint)
-                scanned += len(rows)
-                page_count += 1
+                tile_scanned += len(rows)
                 for row in rows:
                     report = compact_report(row, as_of)
                     if report is None:
                         continue
-                    current = reports.get(report["serial"])
+                    current = tile_reports.get(report["serial"])
                     if current is not None and current != report:
                         raise RuntimeError(f"Conflicting report data: {report['serial']}")
-                    reports[report["serial"]] = report
-            progress(f"Scanned {scanned} building rows, found {len(reports)} distinct reports since 2025", flush=True)
-            if ended or len(pages[-1]) < PAGE_SIZE:
-                result = summarize(list(reports.values()), as_of)
-                result["quality"].update({
-                    "scannedBuildingRows": scanned,
-                    "pages": page_count,
-                    "paginationComplete": True,
-                    "bounds": {"north": 59, "south": 54, "west": 7, "east": 16},
-                })
-                if result["quality"]["includedReports"] == 0:
-                    raise RuntimeError("Nationwide query returned no usable recent reports")
-                return result
-    raise RuntimeError("Nationwide pagination exceeded the safety limit; nothing published")
+                    tile_reports[report["serial"]] = report
+            time.sleep(0.4)
+            if len(rows) < PAGE_SIZE:
+                return tile_scanned, page, list(tile_reports.values())
+        raise RuntimeError(f"Tile {tile} exceeded the pagination safety limit")
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        for index, (tile_scanned, pages, found) in enumerate(pool.map(fetch_tile, tiles), start=1):
+            scanned += tile_scanned
+            page_count += pages
+            for report in found:
+                current = reports.get(report["serial"])
+                if current is not None and current != report:
+                    raise RuntimeError(f"Conflicting report data across tiles: {report['serial']}")
+                reports[report["serial"]] = report
+            progress(
+                f"Completed {index}/{len(tiles)} areas, scanned {scanned} rows, "
+                f"found {len(reports)} distinct reports since 2025", flush=True,
+            )
+    result = summarize(list(reports.values()), as_of)
+    result["quality"].update({
+        "scannedBuildingRows": scanned, "pages": page_count,
+        "tiles": len(tiles), "paginationComplete": True,
+        "bounds": {"north": 59, "south": 54, "west": 7, "east": 16},
+    })
+    if result["quality"]["includedReports"] == 0:
+        raise RuntimeError("Nationwide query returned no usable recent reports")
+    return result
 
 
 def main():

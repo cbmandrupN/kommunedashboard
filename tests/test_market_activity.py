@@ -60,9 +60,10 @@ class MarketActivityTests(unittest.TestCase):
             return {"ResponseStatus": {"Status": "RESULT_OK"},
                     "SearchResults": [source(), source()] if page == 1 else []}
         result = activity.collect(date(2026, 10, 26), request, lambda *_args, **_kwargs: None)
-        self.assertEqual(result["quality"]["scannedBuildingRows"], 2)
+        self.assertEqual(result["quality"]["scannedBuildingRows"], 180)
         self.assertEqual(result["quality"]["includedReports"], 1)
         self.assertTrue(result["quality"]["paginationComplete"])
+        self.assertEqual(result["quality"]["tiles"], 90)
 
     @patch.object(activity.time, "sleep")
     def test_bad_response_does_not_publish_zero_market(self, _sleep):

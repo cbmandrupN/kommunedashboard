@@ -1,59 +1,29 @@
-name: Update EMOData
+name: Collect nationwide market activity
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 3 1,15 * *"
 
 permissions:
-  contents: write
-
-concurrency:
-  group: emodata-update
-  cancel-in-progress: false
+  contents: read
 
 jobs:
-  update:
+  collect:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Generate dashboard data
+      - run: python -m unittest discover -s tests -p test_market_activity.py -v
+      - name: Collect all-owner market snapshot since January 2025
         env:
           EMODATA_USERNAME: ${{ secrets.EMODATA_USERNAME }}
           EMODATA_PASSWORD: ${{ secrets.EMODATA_PASSWORD }}
-        run: |
-          python scripts/pipeline.py update-emodata \
-            --inventory data/municipality-inventory.json.gz \
-            --dashboard src/data/dashboard-data.json \
-            --exports public/exports \
-            --building-data public/buildings | tee update-summary.json
-      - name: Test generated data
-        run: python -m unittest discover -s tests -v
-      - name: Write job summary
-        run: |
-          echo "## EMOData-opdatering" >> "$GITHUB_STEP_SUMMARY"
-          echo '```json' >> "$GITHUB_STEP_SUMMARY"
-          cat update-summary.json >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-      - name: Commit updated data
-        run: |
-          git add src/data/dashboard-data.json \
-            public/exports public/buildings \
-            public/exports-from-60 public/buildings-from-60 \
-            public/exports-with-coowners public/buildings-with-coowners \
-            public/exports-from-60-with-coowners \
-            public/buildings-from-60-with-coowners \
-            public/exports-60-250 public/buildings-60-250 \
-            public/exports-60-250-with-coowners \
-            public/buildings-60-250-with-coowners
-          if git diff --cached --quiet; then
-            echo "Data er uændret."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Update EMOData dashboard data"
-          git push
+        run: python scripts/market_activity.py --output public/market-activity.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: market-activity
+          path: public/market-activity.json
+          retention-days: 3
+          if-no-files-found: error

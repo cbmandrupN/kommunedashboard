@@ -144,3 +144,74 @@ Hvis en bygning ikke kan matches i EMOData, bruges energimærket fra det
 oprindelige kommunale udtræk som fallback.
 Repositoryet skal have de
 krypterede secrets `EMODATA_USERNAME` og `EMODATA_PASSWORD`.
+
+### Afgrænset prøve af markedsaktivitet
+
+`scripts/market_activity_pilot.py` undersøger datadækning uden at ændre dashboardet
+eller dets opdateringsjob. Den undersøger første og sidste dag i seneste afsluttede
+kalendermåned, højst otte forskellige rapporter, fordelt på ændringstyper, og højst
+to fulde inputopslag. Der bruges ingen ejer- eller arealfiltre. Resultatet indeholder
+kun udvalgte rapport-/firmafelter, ikke adresser eller konsulentnavne. Det er en
+stikprøve, ikke månedstal eller en markedsandelsberegning.
+
+Kør med EMOData-adgang i miljøvariabler:
+
+```powershell
+python scripts\market_activity_pilot.py --as-of 2026-10-26 --output market-pilot.json
+python -m unittest discover -s tests -p test_market_activity_pilot.py -v
+```
+
+Liveprøven den 26. oktober 2026 fandt firmanavn og firma-ID på alle fire aktive
+rapporter i den stratificerede stikprøve. Fire andre rapporter var ikke længere
+tilgængelige i BBR-søgningen; ét fuldt opslag bekræftede, at rapporten var erstattet.
+Det aktive fulde opslag havde `ValidFrom`, men ingen udfyldt `DateOfSubmission`.
+Alle fire aktive rapporter var `SingleFamily`; erhvervsdækning er ikke verificeret
+af denne lille stikprøve. Firma-ID er tjenestens identifikator, ikke et verificeret CVR.
+
+En kommende markedsfane skal derfor vælge og tydeligt navngive sin datodefinition.
+`ValidFrom` må ikke stiltiende bruges som indberetningsdato. Ændringsloggens poster
+må heller ikke tælles direkte som ny aktivitet, da de inkluderer erstatninger og
+flere bygningsposter pr. rapport. Fuld månedstælling, historisk dækning,
+ændringstyper, annulleringer og revisionskæder er ikke afklaret af prøven.
+
+### Markedsaktivitet fra januar 2025
+
+Den tredje fane **Markedsaktivitet** er uafhængig af kommunale ejer- og arealfiltre.
+Den viser månedlige rapporttal, andel af de fundne rapporter, forskel fra forrige
+måned, anvendelsestype, firmasøgning, firmagraf og CSV. Seneste afsluttede måned
+er standard; den igangværende måned markeres foreløbig og får ingen beregnet
+ændring mod en hel måned. Januar 2025 sammenlignes ikke med december 2024.
+
+Datogrundlaget er **ValidFrom (gyldig fra)**, aldrig en antaget indberetningsdato.
+`scripts/market_activity.py` gennemgår EMOData-geografisøgningen for Danmark
+(54–59° N, 7–16° Ø) i 90 felter på 0,5 kvadratgrader, under tjenestens arealgrænse.
+Alle sider gennemgås, og hver rapport tælles kun én gang efter EM-nummer, også når
+den omfatter flere bygninger eller findes ved en feltgrænse. Indsamlingen bruger
+højst fire samtidige forespørgsler med pause mellem sider. Fejl, modstridende
+rapportdata, gentagne sider og overskredet sidegrænse afbryder publiceringen.
+
+Kun fundne rapporter med status `VALID` og gyldighedsstart fra **1. januar 2025**
+til opgørelsesdatoen medtages. Firmaer samles efter `SubmitterCompanyIdentifier`;
+det er et EMOData-firma-ID, ikke et verificeret CVR. Navnevarianter under samme ID
+kan søges, og seneste fundne navn vises. Rapporterne uden både navn og firma-ID
+står i en særskilt ukendt-gruppe og indgår i andelenes nævner.
+
+**Dette er en markedsindikator, ikke en komplet historisk produktionstælling.**
+Tidligere mærker, der senere er annulleret eller erstattet, kan mangle i det aktuelle
+udtræk. Geografisøgningen kan også mangle mærker uden brugbare koordinater.
+En ny rapport kan være en rettelse og er ikke nødvendigvis en ny kundeopgave.
+Også tidligere måneders tal kan derfor ændre sig ved senere opdateringer.
+Forbeholdene vises i fanen og i CSV. Der vises ikke omsætning eller en påstået
+andel af alle historisk udstedte energimærker.
+
+`public/market-activity.json` indeholder kun firma-/månedsaggregater, ingen adresser
+eller konsulentnavne. Filen krypteres sammen med dashboardet. Dens opdateringsdato
+vises særskilt fra kommunedatas dato. **Update market activity** kører den 1. og 15.
+kl. 04.17 UTC, opdaterer kun denne fil og genudgiver siden efter en vellykket kørsel.
+Kommunedataenes job og tidsplan er uændret.
+
+```powershell
+python scripts\market_activity.py --output public\market-activity.json
+python -m unittest discover -s tests -p test_market_activity.py -v
+npm run test:market
+```

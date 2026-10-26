@@ -23,6 +23,7 @@ import {
 import { Badge, Button, Card, Input, Select, cn } from './components/ui'
 import { fetchDashboardAsset } from './dashboard-assets'
 import MunicipalityMap from './MunicipalityMap'
+import MarketActivity from './MarketActivity'
 import dashboardJson from './data/dashboard-data.json'
 
 const YEARS = [
@@ -315,7 +316,7 @@ function downloadCsv(
 }
 
 export default function App() {
-  const [view, setView] = useState<'overview' | 'map'>('overview')
+  const [view, setView] = useState<'overview' | 'map' | 'market'>('overview')
   const [horizon, setHorizon] = useState<Horizon>('2026')
   const [areaScope, setAreaScope] = useState<AreaScope>('current')
   const [ownershipScope, setOwnershipScope] = useState<OwnershipScope>('direct')
@@ -651,7 +652,7 @@ export default function App() {
             <CalendarClock size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
             <div className="sm:text-right">
               <p className="font-medium text-slate-800">
-                Data sidst opdateret:{' '}
+                {view === 'market' ? 'Kommunedata sidst opdateret: ' : 'Data sidst opdateret: '}
                 <time dateTime={dashboard.generatedAt}>{lastUpdated}</time> (dansk tid)
               </p>
               <p>Opdatering planlagt den 1. og 15. i hver måned.</p>
@@ -667,16 +668,18 @@ export default function App() {
             <div className="relative flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
               <div>
                 <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-300">
-                  <MapPin size={14} /> National udløbsplan
+                  <MapPin size={14} /> {view === 'market' ? 'National markedsaktivitet' : 'National udløbsplan'}
                 </div>
-                <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Hvornår udløber bygningernes energimærker?</h1>
+                <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{view === 'market' ? 'Aktiviteten på energimærkningsmarkedet' : 'Hvornår udløber bygningernes energimærker?'}</h1>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                  {view === 'map'
+                  {view === 'market'
+                    ? 'Følg firmaernes fundne energimærker måned for måned siden januar 2025 — på tværs af ejerskab og bygningstyper.'
+                    : view === 'map'
                     ? 'Se kommunernes energimærker på Danmarkskortet, og vælg en kommune for at undersøge dens bygninger.'
                     : 'Klik på et år og se de kommuner, der har flest bygninger, hvor energimærket udløber.'}
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className={view === 'market' ? 'hidden' : 'flex flex-wrap items-center gap-2'}>
                 <Button
                   variant="secondary"
                   size="sm"
@@ -694,7 +697,7 @@ export default function App() {
         </section>
 
         <nav aria-label="Dashboardvisning" className="flex gap-1 border-b border-slate-200">
-          {([['overview', 'Oversigt'], ['map', 'Kort']] as const).map(([value, label]) => (
+          {([['overview', 'Oversigt'], ['map', 'Kort'], ['market', 'Markedsaktivitet']] as const).map(([value, label]) => (
             <button
               key={value}
               type="button"
@@ -708,7 +711,7 @@ export default function App() {
           ))}
         </nav>
 
-        <section
+        {view !== 'market' && <section
           className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm lg:flex-row lg:items-center lg:justify-between"
           aria-labelledby="scope-title"
         >
@@ -748,7 +751,9 @@ export default function App() {
               disabledValues={DASHBOARD_SCOPES[areaScope].withCoowners ? [] : ['withCoowners']}
             />
           </div>
-        </section>
+        </section>}
+
+        {view === 'market' && <MarketActivity />}
 
         {view === 'map' && (
           <MunicipalityMap
@@ -1444,8 +1449,8 @@ export default function App() {
       </main>
 
       <footer className="mx-auto flex max-w-[1500px] flex-wrap justify-between gap-2 px-6 pb-8 pt-2 text-xs text-slate-400">
-        <span>Kilde: kommunalt bygningsudtræk og EMOData</span>
-        <span>Opgjort pr. {sourceDate}</span>
+        <span>{view === 'market' ? 'Kilde: EMOData · opgørelse efter gyldighedsstart' : 'Kilde: kommunalt bygningsudtræk og EMOData'}</span>
+        <span>{view === 'market' ? 'Markedsperioden starter 1. januar 2025' : `Opgjort pr. ${sourceDate}`}</span>
       </footer>
     </div>
   )

@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "vite",
     "predev": "node --experimental-strip-types scripts/build-map-data.mjs",
-    "prebuild": "node --experimental-strip-types scripts/build-map-data.mjs",
+    "prebuild": "node --experimental-strip-types scripts/build-map-data.mjs && node --experimental-strip-types scripts/validate-market-data.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint src scripts tests",
     "test:access": "node --test tests/protect-site.test.mjs",
     "test:map": "node --experimental-strip-types --test tests/map.test.mjs",
+    "test:market": "node --experimental-strip-types --test tests/market.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -31,6 +31,7 @@ export default function MarketActivity() {
   const [monthSelection, setMonthSelection] = useState('')
   const [usage, setUsage] = useState('__all__')
   const [companyId, setCompanyId] = useState('')
+  const [chartYear, setChartYear] = useState('__all__')
   const [query, setQuery] = useState('')
   useEffect(() => {
     const controller = new AbortController()
@@ -70,7 +71,8 @@ export default function MarketActivity() {
       .some((name) => name.toLocaleLowerCase('da-DK').includes(normalized)))
   const unknown = rows.find((row) => row.company.id === '__unknown__')?.current ?? 0
   const chartCompanies = selectedCompany ? [selectedCompany] : data.companies
-  const chartData = data.months.map((key) => ({
+  const years = [...new Set(data.months.map((key) => key.slice(0, 4)))]
+  const chartData = data.months.filter((key) => chartYear === '__all__' || key.startsWith(`${chartYear}-`)).map((key) => ({
     month: key,
     label: key.slice(2).replace('-', '/'),
     reports: chartCompanies.reduce((sum, company) => sum + marketCount(company, key, usage), 0),
@@ -135,17 +137,29 @@ export default function MarketActivity() {
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-slate-950">{selectedCompany?.name ?? 'Alle firmaer'} · månedlig udvikling</h3>
-            <p className="mt-1 text-xs text-slate-600">Antal rapporter med gyldighedsstart i måneden. Klik på en søjle for at vælge måned. Sidste viste måned er foreløbig.</p>
+            <p className="mt-1 text-xs text-slate-600">
+              Antal rapporter med gyldighedsstart i måneden. Klik på en søjle for at vælge måned.
+              {chartData.at(-1)?.month === data.asOf.slice(0, 7) && ' Sidste viste måned er foreløbig.'}
+            </p>
           </div>
-          <label className="min-w-0 max-w-full text-xs font-semibold text-slate-700">
-            Vis firma i graf
-            <Select aria-label="Vælg firma i aktivitetsgraf" className="mt-1.5 block max-w-full sm:max-w-80" value={companyId} onChange={(event) => setCompanyId(event.target.value)}>
-              <option value="">Alle firmaer</option>
-              {data.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
-            </Select>
-          </label>
+          <div className="flex max-w-full flex-wrap items-end gap-3">
+            <label className="min-w-0 text-xs font-semibold text-slate-700">
+              År i graf
+              <Select aria-label="Vælg år i aktivitetsgraf" className="mt-1.5 block max-w-full" value={chartYear} onChange={(event) => setChartYear(event.target.value)}>
+                <option value="__all__">Alle år</option>
+                {years.map((year) => <option key={year} value={year}>{year}</option>)}
+              </Select>
+            </label>
+            <label className="min-w-0 max-w-full text-xs font-semibold text-slate-700">
+              Vis firma i graf
+              <Select aria-label="Vælg firma i aktivitetsgraf" className="mt-1.5 block max-w-full sm:max-w-80" value={companyId} onChange={(event) => setCompanyId(event.target.value)}>
+                <option value="">Alle firmaer</option>
+                {data.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+              </Select>
+            </label>
+          </div>
         </div>
-        <div className="h-[280px] w-full" role="img" aria-label={`Månedlig aktivitet fra januar 2025 for ${selectedCompany?.name ?? 'alle firmaer'}. De præcise tal findes i tabellen nedenfor.`}>
+        <div className="h-[280px] w-full" role="img" aria-label={`Månedlig aktivitet ${chartYear === '__all__' ? 'fra januar 2025' : `i ${chartYear}`} for ${selectedCompany?.name ?? 'alle firmaer'}. De præcise tal findes i tabellen nedenfor.`}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 10, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />

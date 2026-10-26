@@ -181,6 +181,8 @@ Den viser månedlige rapporttal, andel af de fundne rapporter, forskel fra forri
 måned, anvendelsestype, firmasøgning, firmagraf og CSV. Seneste afsluttede måned
 er standard; den igangværende måned markeres foreløbig og får ingen beregnet
 ændring mod en hel måned. Januar 2025 sammenlignes ikke med december 2024.
+Grafens årsvælger viser enten alle år eller et enkelt år fra dataperioden.
+Valget gælder både søjlerne og grafens månedstabel og bevarer firma- og typevalget.
 
 Datogrundlaget er **ValidFrom (gyldig fra)**, aldrig en antaget indberetningsdato.
 `scripts/market_activity.py` gennemgår EMOData-geografisøgningen for Danmark

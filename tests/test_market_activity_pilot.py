@@ -40,6 +40,14 @@ class MarketActivityPilotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             pilot.matching_report([row, {**row, "SubmitterCompanyIdentifier": "other"}], "123")
 
+    def test_sample_covers_change_types_instead_of_only_first_group(self):
+        rows = [{"EntityIdentifier": index, "ChangeType": kind}
+                for kind in (2, 1) for index in range(10)]
+        self.assertEqual(
+            [row["ChangeType"] for row in pilot.sample_changes(rows, 4)],
+            [2, 1, 2, 1],
+        )
+
     def test_sample_is_bounded_and_never_reports_monthly_totals(self):
         calls = []
 

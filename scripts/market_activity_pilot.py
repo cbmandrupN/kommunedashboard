@@ -53,6 +53,18 @@ def matching_report(rows: list[dict], serial: str) -> dict | None:
     return matches[0]
 
 
+def sample_changes(rows: list[dict], limit: int) -> list[dict]:
+    groups = {}
+    for row in rows:
+        groups.setdefault(str(row.get("ChangeType")), []).append(row)
+    sample = []
+    while len(sample) < limit and any(groups.values()):
+        for group in groups.values():
+            if group and len(sample) < limit:
+                sample.append(group.pop(0))
+    return sample
+
+
 def request_json(endpoint: str, token: str) -> dict:
     request = urllib.request.Request(
         BASE_URL + endpoint,
@@ -105,7 +117,7 @@ def run_pilot(today: date, request) -> dict:
             row for row in unique
             if str(row["EntityIdentifier"]) not in sampled_serials
         ]
-        for change in candidates[: MAX_REPORTS // 2]:
+        for change in sample_changes(candidates, MAX_REPORTS // 2):
             serial = str(change["EntityIdentifier"])
             sampled_serials.add(serial)
             sample = {
@@ -143,8 +155,13 @@ def run_pilot(today: date, request) -> dict:
                 sample["lookupIssue"] = "Changed report not found in BBR search results"
             report["reports"].append(sample)
 
-    # Two full input requests at most, to test the documented submission date.
-    for sample in report["reports"][:2]:
+    # Prefer one matched and one unmatched record to test both active and replaced reports.
+    matched = [row for row in report["reports"] if row["lookupMatched"]]
+    unmatched = [row for row in report["reports"] if not row["lookupMatched"]]
+    full_samples = (matched[:1] + unmatched[:1])
+    if len(full_samples) < 2:
+        full_samples = (matched + unmatched)[:2]
+    for sample in full_samples:
         payload = request(f"FindEnergyLabelInput/{sample['serial']}")
         wrapper = payload.get("FindEnergyLabelInputResult")
         if not isinstance(wrapper, dict):
@@ -162,13 +179,12 @@ def run_pilot(today: date, request) -> dict:
             sample["formerSerial"] = row.get("FormerEnergyLabelSerialIdentifier")
             sample["fullInputValidFrom"] = row.get("ValidFrom")
 
-    matched = [row for row in report["reports"] if row["lookupMatched"]]
     report["coverage"] = {
         "sampledReports": len(report["reports"]),
         "matchedInSearch": len(matched),
         "withCompanyName": sum(bool(row.get("companyName")) for row in matched),
         "withCompanyIdentifier": sum(bool(row.get("companyIdentifier")) for row in matched),
-        "fullInputLookups": min(2, len(report["reports"])),
+        "fullInputLookups": len(full_samples),
         "withSubmissionDate": sum(bool(row.get("dateOfSubmission")) for row in report["reports"]),
     }
     return report

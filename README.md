@@ -144,3 +144,32 @@ Hvis en bygning ikke kan matches i EMOData, bruges energimærket fra det
 oprindelige kommunale udtræk som fallback.
 Repositoryet skal have de
 krypterede secrets `EMODATA_USERNAME` og `EMODATA_PASSWORD`.
+
+### Afgrænset prøve af markedsaktivitet
+
+`scripts/market_activity_pilot.py` undersøger datadækning uden at ændre dashboardet
+eller dets opdateringsjob. Den undersøger første og sidste dag i seneste afsluttede
+kalendermåned, højst otte forskellige rapporter, fordelt på ændringstyper, og højst
+to fulde inputopslag. Der bruges ingen ejer- eller arealfiltre. Resultatet indeholder
+kun udvalgte rapport-/firmafelter, ikke adresser eller konsulentnavne. Det er en
+stikprøve, ikke månedstal eller en markedsandelsberegning.
+
+Kør med EMOData-adgang i miljøvariabler:
+
+```powershell
+python scripts\market_activity_pilot.py --as-of 2026-10-26 --output market-pilot.json
+python -m unittest discover -s tests -p test_market_activity_pilot.py -v
+```
+
+Liveprøven den 26. oktober 2026 fandt firmanavn og firma-ID på alle fire aktive
+rapporter i den stratificerede stikprøve. Fire andre rapporter var ikke længere
+tilgængelige i BBR-søgningen; ét fuldt opslag bekræftede, at rapporten var erstattet.
+Det aktive fulde opslag havde `ValidFrom`, men ingen udfyldt `DateOfSubmission`.
+Alle fire aktive rapporter var `SingleFamily`; erhvervsdækning er ikke verificeret
+af denne lille stikprøve. Firma-ID er tjenestens identifikator, ikke et verificeret CVR.
+
+En kommende markedsfane skal derfor vælge og tydeligt navngive sin datodefinition.
+`ValidFrom` må ikke stiltiende bruges som indberetningsdato. Ændringsloggens poster
+må heller ikke tælles direkte som ny aktivitet, da de inkluderer erstatninger og
+flere bygningsposter pr. rapport. Fuld månedstælling, historisk dækning,
+ændringstyper, annulleringer og revisionskæder er ikke afklaret af prøven.

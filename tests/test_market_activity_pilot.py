@@ -76,6 +76,27 @@ class MarketActivityPilotTests(unittest.TestCase):
         self.assertEqual(report["coverage"]["withCompanyIdentifier"], 8)
         self.assertEqual(report["coverage"]["withSubmissionDate"], 2)
         self.assertIsNone(report["monthlyTotals"])
+        self.assertEqual(len({row["serial"] for row in report["reports"]}), 8)
+
+    def test_missing_submission_date_is_not_replaced_by_valid_from(self):
+        def request(endpoint):
+            if endpoint.startswith("GetEnergyLabelChangeLog"):
+                return {"SearchResults": [
+                    {"EntityIdentifier": 123, "MunicipalityNumber": "101",
+                     "PropertyNumber": "1", "BuildingNumber": "1"}
+                ]}
+            if endpoint.startswith("SearchEnergyLabelBBR"):
+                return {"SearchResults": [
+                    {"EnergyLabelSerialIdentifier": "123", "ValidFrom": "2026-09-01"}
+                ]}
+            return {"FindEnergyLabelInputResult": {"EnergyLabels": [
+                {"EnergyLabelNumber": 123, "ValidFrom": "2026-09-01"}
+            ]}}
+
+        report = pilot.run_pilot(date(2026, 10, 26), request)
+        self.assertEqual(report["coverage"]["withSubmissionDate"], 0)
+        self.assertIsNone(report["reports"][0]["dateOfSubmission"])
+        self.assertEqual(report["reports"][0]["validFrom"], "2026-09-01")
 
     def test_unexpected_api_schema_is_not_an_empty_success(self):
         with self.assertRaises(RuntimeError):

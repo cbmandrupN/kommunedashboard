@@ -222,6 +222,8 @@ npm run test:market
 
 Modulet **Siden sidste opdatering** i Oversigt sammenligner de to seneste
 kommunale dataudtræk og følger kommune-, ejer- og arealvalget, ikke udløbsåret.
+Modulet er sammenfoldet som standard. Klik på overskriften for at udvide eller
+minimere det; periode og antal ændrede bygninger er altid synlige.
 Det tæller bygninger med først fundet mærke, skiftet rapportnummer, ændring fra
 gyldigt til udløbet samt mærker, der ikke længere findes i udtrækket. Tilføjede
 og udgåede bygninger og øvrige dataændringer vises særskilt, ikke som nye opgaver.

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { Button, Card, Select } from './components/ui'
 import { fetchDashboardAsset } from './dashboard-assets'
 import {
@@ -75,7 +76,8 @@ export default function UpdateReport({ directory, selectedCvr, municipalityName,
   return (
     <Card className="p-5">
       <section aria-label="Siden sidste opdatering">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <details className="group/report">
+        <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-600 [&::-webkit-details-marker]:hidden">
           <div>
             <h2 className="text-[15px] font-semibold text-slate-900">Siden sidste opdatering</h2>
             <p className="mt-1 text-xs leading-5 text-slate-600">
@@ -84,8 +86,11 @@ export default function UpdateReport({ directory, selectedCvr, municipalityName,
               {' · '}{municipalityName ?? 'Alle kommuner'} · valgte ejer- og arealfilter.
             </p>
           </div>
-          <span className="text-xs text-slate-600" data-testid="update-report-total">{numbers.format(changes.length)} bygninger med ændringer</span>
-        </div>
+          <span className="flex items-center gap-3">
+            <span className="text-xs text-slate-600" data-testid="update-report-total">{numbers.format(changes.length)} bygninger med ændringer</span>
+            <ChevronDown size={16} className="shrink-0 text-blue-700 group-open/report:rotate-180" aria-hidden="true" />
+          </span>
+        </summary>
         <dl className="mt-4 flex flex-wrap gap-x-10 gap-y-4 border-t border-slate-200 pt-4">
           {primaryKinds.map((value) => (
             <div key={value}>
@@ -155,6 +160,7 @@ export default function UpdateReport({ directory, selectedCvr, municipalityName,
           </div>
           {visible.length === 0 && <p className="py-4 text-sm text-slate-600">Ingen registrerede ændringer af den valgte type.</p>}
           {visibleCount < visible.length && <Button variant="secondary" size="sm" className="mt-3" onClick={() => setVisibleCount((value) => value + 50)}>Vis 50 flere ({numbers.format(visible.length - visibleCount)} tilbage)</Button>}
+        </details>
         </details>
       </section>
     </Card>

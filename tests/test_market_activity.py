@@ -79,6 +79,57 @@ class MarketActivityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             activity.summarize([row, row], date(2026, 10, 26))
 
+    @patch.object(activity.time, "sleep")
+    def test_unspecified_error_retries_same_page_without_double_counting(self, sleep):
+        requests = {}
+        messages = []
+
+        def request(url):
+            requests[url] = requests.get(url, 0) + 1
+            page = int(parse_qs(urlparse(url).query)["pageNumber"][0])
+            if page == 2 and requests[url] <= 2:
+                return {"ResponseStatus": {"Status": "UNSPECIFIED_ERROR", "StatusCode": 0},
+                        "SearchResults": None}
+            return {"ResponseStatus": {"Status": "RESULT_OK"},
+                    "SearchResults": [source()] if page == 1 else []}
+
+        with patch.object(activity, "PAGE_SIZE", 1), patch.object(activity, "WORKERS", 1):
+            result = activity.collect(date(2026, 10, 26), request,
+                                      lambda message, **_kwargs: messages.append(message))
+        self.assertEqual(result["quality"]["includedReports"], 1)
+        self.assertEqual(result["quality"]["scannedBuildingRows"], 90)
+        self.assertEqual(result["quality"]["pages"], 180)
+        self.assertEqual(sum("retrying" in message for message in messages), 180)
+        self.assertTrue(all(attempts == (3 if "pageNumber=2" in url else 1)
+                            for url, attempts in requests.items()))
+        sleep.assert_any_call(5)
+        sleep.assert_any_call(10)
+
+    @patch.object(activity.time, "sleep")
+    def test_persistent_unspecified_error_aborts_after_bounded_retries(self, _sleep):
+        requests = {}
+
+        def request(url):
+            requests[url] = requests.get(url, 0) + 1
+            return {"ResponseStatus": {"Status": "UNSPECIFIED_ERROR"}, "SearchResults": []}
+
+        with patch.object(activity, "WORKERS", 1), self.assertRaisesRegex(RuntimeError, "after 3 attempts"):
+            activity.collect(date(2026, 10, 26), request, lambda *_args, **_kwargs: None)
+        self.assertTrue(requests)
+        self.assertTrue(all(attempts == 3 for attempts in requests.values()))
+
+    @patch.object(activity.time, "sleep")
+    def test_authentication_error_is_not_retried_as_transient(self, _sleep):
+        requests = {}
+
+        def request(url):
+            requests[url] = requests.get(url, 0) + 1
+            return {"ResponseStatus": {"Status": "AUTHENTICATION_ERROR"}, "SearchResults": None}
+
+        with patch.object(activity, "WORKERS", 1), self.assertRaisesRegex(RuntimeError, "AUTHENTICATION_ERROR"):
+            activity.collect(date(2026, 10, 26), request, lambda *_args, **_kwargs: None)
+        self.assertTrue(all(attempts == 1 for attempts in requests.values()))
+
 
 if __name__ == "__main__":
     unittest.main()

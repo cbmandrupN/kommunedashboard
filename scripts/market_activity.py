@@ -138,7 +138,21 @@ def collect(as_of: date, request, progress=print) -> dict:
                 "coordinateX2": north, "coordinateY2": east,
                 "pageNumber": page, "pageSize": PAGE_SIZE,
             })
-            payload = request(f"{ENDPOINT}?{query}")
+            for attempt in range(3):
+                payload = request(f"{ENDPOINT}?{query}")
+                response_status = payload.get("ResponseStatus")
+                if not isinstance(response_status, dict) or response_status.get("Status") != "UNSPECIFIED_ERROR":
+                    break
+                if attempt == 2:
+                    raise RuntimeError(
+                        f"EMOData returned UNSPECIFIED_ERROR after 3 attempts: tile={tile}, page={page}"
+                    )
+                delay = 5 * (attempt + 1)
+                progress(
+                    f"EMOData returned UNSPECIFIED_ERROR: tile={tile}, page={page}; "
+                    f"retrying in {delay}s (attempt {attempt + 2}/3)", flush=True,
+                )
+                time.sleep(delay)
             rows = payload.get("SearchResults")
             status = payload.get("ResponseStatus")
             if not isinstance(status, dict):

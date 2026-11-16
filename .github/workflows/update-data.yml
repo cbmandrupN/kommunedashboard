@@ -29,6 +29,7 @@ jobs:
             public/buildings-60-250 public/buildings-60-250-with-coowners \
             "$RUNNER_TEMP/municipal-previous/public/"
       - name: Generate dashboard data
+        shell: bash
         env:
           EMODATA_USERNAME: ${{ secrets.EMODATA_USERNAME }}
           EMODATA_PASSWORD: ${{ secrets.EMODATA_PASSWORD }}
@@ -39,6 +40,7 @@ jobs:
             --exports public/exports \
             --building-data public/buildings | tee update-summary.json
       - name: Compare with previous municipal snapshot
+        shell: bash
         run: |
           python scripts/update_report.py \
             --previous "$RUNNER_TEMP/municipal-previous" \

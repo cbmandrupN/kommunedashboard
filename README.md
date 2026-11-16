@@ -191,6 +191,10 @@ Alle sider gennemgås, og hver rapport tælles kun én gang efter EM-nummer, ogs
 den omfatter flere bygninger eller findes ved en feltgrænse. Indsamlingen bruger
 højst fire samtidige forespørgsler med pause mellem sider. Fejl, modstridende
 rapportdata, gentagne sider og overskredet sidegrænse afbryder publiceringen.
+EMOData-svaret `UNSPECIFIED_ERROR` genforsøges på samme side op til tre gange
+med 5 og 10 sekunders ventetid og synlig logning. Ved fortsat fejl afbrydes
+opdateringen, og det seneste komplette snapshot bevares. Adgangsfejl og andre
+uventede svar behandles ikke som tomme resultater.
 
 Kun fundne rapporter med status `VALID` og gyldighedsstart fra **1. januar 2025**
 til opgørelsesdatoen medtages. Firmaer samles efter `SubmitterCompanyIdentifier`;

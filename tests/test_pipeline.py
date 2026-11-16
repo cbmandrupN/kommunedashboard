@@ -32,6 +32,74 @@ from pipeline import (
 
 
 class PipelineTests(unittest.TestCase):
+    @mock.patch.object(pipeline.time, "sleep")
+    def test_company_api_reuses_only_exact_reports_and_deduplicates_bfe(self, _sleep):
+        response = {
+            "ResponseStatus": {"Status": "RESULT_OK"},
+            "EnergyLabels": [
+                {"EnergyLabelSerialIdentifier": "222", "SubmitterCompanyName": "Nyt Firma"},
+                {"EnergyLabelSerialIdentifier": "333", "SubmitterCompanyName": "Andet Firma"},
+                {"EnergyLabelSerialIdentifier": "999", "SubmitterCompanyName": "Forkert rapport"},
+            ],
+        }
+        with mock.patch.object(pipeline, "_request_json", return_value=response) as request:
+            result = pipeline._fetch_energy_label_companies(
+                {"111": {"10"}, "222": {"20"}, "333": {"20"}},
+                "user", "password", {"111": "Kendt Firma", "999": "Maa ikke overfoeres"},
+            )
+        self.assertEqual(result, {"111": "Kendt Firma", "222": "Nyt Firma", "333": "Andet Firma"})
+        request.assert_called_once_with(
+            "https://emoweb.dk/emodata/EMOData.svc/SearchEnergyLabelBFE/20", "user", "password",
+        )
+
+    @mock.patch.object(pipeline.time, "sleep")
+    def test_company_api_recovers_transient_error_but_rejects_authentication(self, _sleep):
+        good = {"ResponseStatus": {"Status": "RESULT_OK"}, "EnergyLabels": [
+            {"EnergyLabelSerialIdentifier": "123", "SubmitterCompanyName": "Firma"},
+        ]}
+        with mock.patch.object(pipeline, "_request_json", side_effect=[
+            {"ResponseStatus": {"Status": "UNSPECIFIED_ERROR"}}, good,
+        ]) as request:
+            self.assertEqual(
+                pipeline._fetch_energy_label_companies({"123": {"10"}}, "u", "p", {}),
+                {"123": "Firma"},
+            )
+            self.assertEqual(request.call_count, 2)
+        with mock.patch.object(pipeline, "_request_json", return_value={
+            "ResponseStatus": {"Status": "AUTHENTICATION_ERROR"}, "EnergyLabels": [],
+        }) as request, self.assertRaisesRegex(RuntimeError, "AUTHENTICATION_ERROR"):
+            pipeline._fetch_energy_label_companies({"123": {"10"}}, "u", "p", {})
+        self.assertEqual(request.call_count, 1)
+
+    @mock.patch.object(pipeline.time, "sleep")
+    def test_company_api_does_not_assign_a_replacement_company_to_old_report(self, _sleep):
+        with mock.patch.object(pipeline, "_request_json", return_value={
+            "ResponseStatus": {"Status": "RESULT_OK"}, "EnergyLabels": [
+                {"EnergyLabelSerialIdentifier": "456", "SubmitterCompanyName": "Ny udsteder"},
+            ],
+        }):
+            result = pipeline._fetch_energy_label_companies(
+                {"123": {"10"}, "222": {"20"}}, "u", "p", {"222": "Kendt"},
+            )
+        self.assertEqual(result, {"222": "Kendt"})
+
+    def test_company_cache_rejects_conflicting_names_and_keeps_unlabelled_unknown(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "buildings-from-60-with-coowners"
+            directory.mkdir()
+            payload = {"buildings": [
+                {"energyLabel": "123", "companyName": "Firma"},
+                {"energyLabel": "", "companyName": ""},
+                {"energyLabel": "456", "companyName": ""},
+            ]}
+            file = directory / "1.json"
+            file.write_text(json.dumps(payload), encoding="utf-8")
+            self.assertEqual(pipeline._cached_energy_label_companies(Path(temporary) / "buildings"), {"123": "Firma"})
+            payload["buildings"].append({"energyLabel": "123", "companyName": "Konflikt"})
+            file.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Conflicting"):
+                pipeline._cached_energy_label_companies(Path(temporary) / "buildings")
+
     def test_bucket_uses_exact_expiry_date(self) -> None:
         as_of = date(2026, 9, 4)
         self.assertEqual(_bucket(date(2026, 9, 3), as_of), "expired")

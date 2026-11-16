@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import base64
 import gzip
-import http.cookiejar
 import io
 import json
 import os
@@ -13,9 +12,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import uuid
 import zipfile
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from html import unescape
@@ -34,7 +33,6 @@ ENERGY_LABEL_LOOKUP_URL = "https://tjekenergimaerke.emoweb.dk/"
 ENERGY_LABEL_LOOKUP_TEMPLATE = (
     f"{ENERGY_LABEL_LOOKUP_URL}TjekEnergimaerkeSkabelon.xlsx"
 )
-ENERGY_LABEL_COMPANY_BATCH_SIZE = 3000
 YEARS = tuple(str(year) for year in range(2026, 2038))
 BUCKETS = ("expired", *YEARS)
 PUBLIC_PERIODIC_AREA_THRESHOLD = 250
@@ -414,104 +412,91 @@ def _open_with_retries(
     )
 
 
-def _fetch_energy_label_companies(
-    buildings: Iterable[Building],
-) -> dict[str, str]:
-    addresses = sorted(
-        {
-            (building.street, building.house_number, building.postal_code)
-            for building in buildings
-            if building.street
-            and building.house_number
-            and building.postal_code not in {"", "0"}
-        }
-    )
-    if not addresses:
+def _cached_energy_label_companies(building_data_dir: Path | None) -> dict[str, str]:
+    if building_data_dir is None:
         return {}
-
-    template = _open_with_retries(
-        urllib.request.build_opener(),
-        urllib.request.Request(
-            ENERGY_LABEL_LOOKUP_TEMPLATE,
-            headers={"User-Agent": "kommunedashboard/1.0"},
-        ),
-        timeout=60,
-    )
+    directory = _scoped_output_directory(building_data_dir, "from-60-with-coowners")
     companies: dict[str, str] = {}
-    for offset in range(0, len(addresses), ENERGY_LABEL_COMPANY_BATCH_SIZE):
-        batch = addresses[offset : offset + ENERGY_LABEL_COMPANY_BATCH_SIZE]
-        workbook = _company_lookup_workbook(template, batch)
-        cookie_jar = http.cookiejar.CookieJar()
-        opener = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(cookie_jar)
-        )
-        page = _open_with_retries(
-            opener,
-            urllib.request.Request(
-                ENERGY_LABEL_LOOKUP_URL,
-                headers={"User-Agent": "kommunedashboard/1.0"},
-            ),
-            timeout=60,
-        ).decode("utf-8")
-        token_match = re.search(
-            r'name="__RequestVerificationToken" type="hidden" value="([^"]+)"',
-            page,
-        )
-        if token_match is None:
-            raise RuntimeError(
-                "Tjek Energimærke did not return a verification token"
-            )
+    for path in sorted(directory.glob("*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for row in payload["buildings"]:
+            serial = str(row.get("energyLabel") or "").strip()
+            name = str(row.get("companyName") or "").strip()
+            if not serial or not name:
+                continue
+            if serial in companies and companies[serial] != name:
+                raise ValueError(f"Conflicting cached company names for report {serial}")
+            companies[serial] = name
+    return companies
 
-        boundary = f"----kommunedashboard-{uuid.uuid4().hex}"
-        fields = [
-            (
-                f"--{boundary}\r\n"
-                'Content-Disposition: form-data; '
-                'name="__RequestVerificationToken"\r\n\r\n'
-                f"{token_match.group(1)}\r\n"
-            ).encode(),
-            (
-                f"--{boundary}\r\n"
-                'Content-Disposition: form-data; name="historicalEnergyLabels"'
-                "\r\n\r\ntrue\r\n"
-            ).encode(),
-            (
-                f"--{boundary}\r\n"
-                'Content-Disposition: form-data; name="InputFile"; '
-                'filename="energimaerker.xlsx"\r\n'
-                "Content-Type: "
-                "application/vnd.openxmlformats-officedocument."
-                "spreadsheetml.sheet\r\n\r\n"
-            ).encode(),
-            workbook,
-            b"\r\n",
-            f"--{boundary}--\r\n".encode(),
-        ]
-        result = _open_with_retries(
-            opener,
-            urllib.request.Request(
-                f"{ENERGY_LABEL_LOOKUP_URL}?handler=Search",
-                data=b"".join(fields),
-                headers={
-                    "User-Agent": "kommunedashboard/1.0",
-                    "Content-Type": f"multipart/form-data; boundary={boundary}",
-                },
-            ),
-            timeout=300,
-        ).decode("utf-8")
-        if (
-            'data-valmsg-for="InputFile"' in result
-            and "field-validation-error" in result
-        ):
-            raise RuntimeError(
-                "Tjek Energimærke could not process the address workbook"
-            )
-        batch_companies = _parse_company_lookup_html(result)
-        if not batch_companies:
-            raise RuntimeError(
-                "Tjek Energimærke returned no company results for a populated batch"
-            )
-        companies.update(batch_companies)
+
+def _fetch_energy_label_companies(
+    report_bfes: dict[str, set[str]],
+    username: str,
+    password: str,
+    cached: dict[str, str],
+) -> dict[str, str]:
+    companies = {serial: cached[serial] for serial in report_bfes if cached.get(serial)}
+    missing = set(report_bfes) - companies.keys()
+    bfe_reports: dict[str, set[str]] = defaultdict(set)
+    for serial in missing:
+        for bfe in report_bfes[serial]:
+            if not bfe.isdigit():
+                raise ValueError(f"Invalid BFE for report {serial}")
+            bfe_reports[bfe].add(serial)
+    print(
+        f"Company lookup: reusing {len(companies)} exact-report names; "
+        f"checking {len(missing)} reports across {len(bfe_reports)} BFEs in EMOData",
+        file=sys.stderr, flush=True,
+    )
+
+    def fetch(bfe: str) -> dict[str, str]:
+        url = f"https://emoweb.dk/emodata/EMOData.svc/SearchEnergyLabelBFE/{bfe}"
+        for attempt in range(3):
+            payload = _request_json(url, username, password)
+            status = payload.get("ResponseStatus")
+            if not isinstance(status, dict) or status.get("Status") != "UNSPECIFIED_ERROR":
+                break
+            if attempt == 2:
+                raise RuntimeError(f"EMOData company lookup failed after 3 attempts for BFE {bfe}")
+            print(f"Retrying EMOData company lookup for BFE {bfe}: UNSPECIFIED_ERROR", file=sys.stderr, flush=True)
+            time.sleep(5 * (attempt + 1))
+        rows = payload.get("EnergyLabels")
+        status_name = status.get("Status") if isinstance(status, dict) else None
+        if status_name in {"NO_RESULT", "NO_RESULTS", "RESULT_NOT_FOUND", "RESULT_EMPTY"} and rows is None:
+            rows = []
+        if not isinstance(rows, list) or status_name not in {
+            "RESULT_OK", "NO_RESULT", "NO_RESULTS", "RESULT_NOT_FOUND", "RESULT_EMPTY",
+        } or (rows and status_name != "RESULT_OK"):
+            raise RuntimeError(f"Unexpected EMOData company response for BFE {bfe}: {status_name}")
+        found = {}
+        for row in rows:
+            serial = str(row.get("EnergyLabelSerialIdentifier") or "").strip()
+            name = str(row.get("SubmitterCompanyName") or "").strip()
+            if serial not in bfe_reports[bfe] or not name:
+                continue
+            if serial in found and found[serial] != name:
+                raise ValueError(f"Conflicting EMOData company names for report {serial}")
+            found[serial] = name
+        time.sleep(0.25)
+        return found
+
+    pool = ThreadPoolExecutor(max_workers=4)
+    finished = False
+    try:
+        futures = [pool.submit(fetch, bfe) for bfe in sorted(bfe_reports)]
+        for index, future in enumerate(as_completed(futures), start=1):
+            for serial, name in future.result().items():
+                if serial in companies and companies[serial] != name:
+                    raise ValueError(f"Conflicting EMOData company names for report {serial}")
+                companies[serial] = name
+            if index % 100 == 0 or index == len(futures):
+                print(f"Company lookup completed {index}/{len(futures)} BFEs", file=sys.stderr, flush=True)
+        finished = True
+    finally:
+        pool.shutdown(wait=True, cancel_futures=not finished)
+    if report_bfes and not companies:
+        raise RuntimeError("EMOData returned no identifiable companies for municipal reports")
     return companies
 
 
@@ -1508,10 +1493,14 @@ def update_from_emodata(
                     )
 
     current_serials = {item[0] for item in latest_by_building.values()}
+    report_bfes: dict[str, set[str]] = defaultdict(set)
+    for serial, _, building, _ in latest_by_building.values():
+        report_bfes[serial].update(building.bfes)
+    cached_companies = _cached_energy_label_companies(building_data_dir)
     company_names = {
         serial: company
         for serial, company in _fetch_energy_label_companies(
-            item[2] for item in latest_by_building.values()
+            report_bfes, username, password, cached_companies,
         ).items()
         if serial in current_serials
     }
@@ -1545,6 +1534,9 @@ def update_from_emodata(
         "unmatchedGeographicEnergyLabels": unmatched,
         "malformedEnergyLabels": malformed,
         "energyLabelCompaniesFound": len(company_names),
+        "energyLabelCompanySource": "EMOData BFE and exact-report cached names",
+        "energyLabelCompanyNamesReused": sum(serial in cached_companies for serial in company_names),
+        "energyLabelCompaniesMissing": len(current_serials - company_names.keys()),
     }
     dashboard, scope_assets = _aggregate_dashboard_scopes(
         municipalities=municipalities,

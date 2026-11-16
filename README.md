@@ -122,8 +122,17 @@ python scripts\pipeline.py --as-of 2026-09-04 import-workbook `
 
 GitHub Action **Update EMOData** kører automatisk den 1. og 15. i hver måned
 kl. 03.17 UTC og kan også startes manuelt. Den henter seneste energimærker,
-matcher dem mod inventaret og slår energimærkningsfirmaet op via Energistyrelsens
-offentlige Tjek Energimærke. Derefter opdateres de kommunevise Excel-udtræk, og
+matcher dem mod inventaret og slår energimærkningsfirmaet op via EMOData
+`SearchEnergyLabelBFE`. Allerede kendte firmanavne genbruges kun for præcis
+samme rapportnummer fra det seneste komplette bygningsudtræk; et nyt mærke
+arver aldrig et tidligere mærkes firma. Nye og ukendte rapporter matches på
+rapportnummer i BFE-svaret, højst fire opslag ad gangen og ét opslag pr. BFE.
+Rapporter, som ikke længere findes eller mangler firmanavn i API'et, forbliver
+uden firmatilskrivning. Dækning, genbrugte navne og antal rapporter uden firma
+registreres i kvalitetsfelterne og loggen. Modstridende navne, adgangsfejl
+og uventede API-svar afbryder opdateringen uden at publicere delresultater.
+Den ændrede Blazor-formular på Tjek Energimærke bruges ikke til opdateringen.
+Derefter opdateres de kommunevise Excel-udtræk, og
 dashboardet genudgives. Den kompakte note "Data sidst opdateret" i sidens topbjælke
 viser datasættets `generatedAt` i dansk tid på både mobil og desktop, mens `asOf`
 viser energimærkernes opgørelsesdato i sidefoden.

@@ -2,3 +2,4 @@ node_modules/
 dist/
 *.tsbuildinfo
 public/map-summary.json
+public/property-summary.json

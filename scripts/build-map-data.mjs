@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { parseMapShapes, summarizeMapBuildings } from '../src/map-data.ts'
+import { summarizeProperties } from '../src/properties.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const readJson = async (...parts) => JSON.parse(await readFile(path.join(root, ...parts), 'utf8'))
@@ -16,6 +17,7 @@ const scopes = [
   ['-60-250-with-coowners', dashboard.area60To250AndCoOwnedScope],
 ]
 const summaries = {}
+const propertySummaries = {}
 const expectedCvrs = new Set(dashboard.municipalities.map((row) => row.cvr))
 for (const [suffix, scope] of scopes) {
   if (!scope) continue
@@ -25,6 +27,7 @@ for (const [suffix, scope] of scopes) {
     throw new Error(`Map scope does not contain all municipalities: buildings${suffix}`)
   }
   const municipalities = {}
+  const properties = {}
   for (const municipality of scope.municipalities) {
     const payload = await readJson('public', `buildings${suffix}`, `${municipality.cvr}.json`)
     if (payload.asOf !== dashboard.asOf || payload.municipality.cvr !== municipality.cvr) {
@@ -38,8 +41,10 @@ for (const [suffix, scope] of scopes) {
       throw new Error(`Map totals differ from dashboard: ${suffix}/${municipality.cvr}`)
     }
     municipalities[municipality.cvr] = summary
+    properties[municipality.cvr] = summarizeProperties(payload.buildings)
   }
   summaries[`buildings${suffix}`] = municipalities
+  propertySummaries[`buildings${suffix}`] = properties
 }
 const shapes = parseMapShapes(geometry, dashboard.municipalities)
 if (shapes.length !== 98) throw new Error('Expected all 98 Danish municipalities')
@@ -50,3 +55,9 @@ await writeFile(path.join(root, 'public', 'map-summary.json'), JSON.stringify({
   scopes: summaries,
 }))
 console.log(`Generated map summaries: ${shapes.length} municipalities, ${Object.keys(summaries).length} scopes.`)
+await writeFile(path.join(root, 'public', 'property-summary.json'), JSON.stringify({
+  asOf: dashboard.asOf,
+  generatedAt: dashboard.generatedAt,
+  scopes: propertySummaries,
+}))
+console.log(`Generated address-based property summaries for ${Object.keys(propertySummaries).length} scopes.`)

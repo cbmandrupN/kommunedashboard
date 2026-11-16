@@ -71,6 +71,27 @@ Den valgte afgrænsning og antal bygninger vises kompakt over grafen.
 De fem nøgletal følger den valgte kommune og areal-/ejerskabsfiltrene, ligesom grafen.
 **Vis alle kommuner** skifter nøgletallene tilbage til landstal.
 
+I **Oversigt → Optælling** kan man vælge **Bygninger** (standard) eller **Ejendomme**.
+Ejendomme er her adressegrupper: samme normaliserede adresse og postnummer inden for
+kommunen og det valgte areal-/ejerskabsscenarie. De er ikke juridiske BFE-ejendomme;
+flere BFE-numre på samme adresse samles, mens forskellige adresser på samme BFE ikke
+samles. Bygninger uden adresse eller postnummer holdes hver for sig.
+Hver adresse tælles i præcis én kategori: mangler en bygning mærke, står adressen under
+**Mangler**; ellers prioriteres et udløbet mærke; ellers bruges det tidligste gyldige
+udløb blandt bygningerne. **Gyldige** betyder derfor, at alle medtagne bygninger på
+adressen har et gyldigt mærke. Udløb efter 2037 tæller med som gyldige, men ligger uden
+for grafens år.
+
+Optællingen følger nøgletal, antal i grafen, kommuneoversigt, CSV-plan og den
+kommunevise liste, hvor hver adresse kan foldes ud til de enkelte bygninger.
+Søgning og firmafilter finder hele adressegrupper; status-/årsfilter bruger adressens
+samlede prioritet, ikke kun de bygninger, der matcher søgeteksten.
+Arealtallene i grafen, kort, ændringsrapport, firmaanalyse og Excel-udtræk er fortsat
+bygningsbaserede. Arealgrænsen anvendes før adressegrupperingen, ikke på adressens
+samlede areal. `public/property-summary.json` dannes sammen med kortsummerne før
+dev/build og krypteres ved publicering. Snapshot og kommunesummer valideres ved
+indlæsning. `npm run test:properties` kontrollerer grupperingen og optællingen.
+
 Fanen **Kort** viser alle 98 kommuner på et Danmarkskort. Farverne angiver gyldigt
 energimærket opvarmet BBR-areal divideret med hele det medtagne opvarmede BBR-areal,
 ikke andelen af bygninger. Areal og ejerskab følger de samme filtre som **Oversigt**.

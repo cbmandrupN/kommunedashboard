@@ -25,6 +25,8 @@ import { fetchDashboardAsset } from './dashboard-assets'
 import MunicipalityMap from './MunicipalityMap'
 import MarketActivity from './MarketActivity'
 import UpdateReport from './UpdateReport'
+import PropertyList from './PropertyList'
+import { groupProperties, parsePropertySummaries } from './properties'
 import dashboardJson from './data/dashboard-data.json'
 
 const YEARS = [
@@ -243,10 +245,6 @@ function unlabelledFor(row: Municipality) {
   return row.unlabelled.buildings
 }
 
-function formatBuildings(value: number) {
-  return `${numberFormat.format(value)} bygninger`
-}
-
 function formatArea(value: number) {
   return `${numberFormat.format(value)} m²`
 }
@@ -255,7 +253,7 @@ function formatExpiryDate(value: string) {
   return value ? shortDateFormat.format(new Date(`${value}T12:00:00`)) : '—'
 }
 
-function buildingMatchesFilter(building: BuildingRecord, filter: BuildingFilter) {
+function buildingMatchesFilter(building: Pick<BuildingRecord, 'status' | 'validTo'>, filter: BuildingFilter) {
   if (filter === 'all') return true
   if (filter === 'valid' || filter === 'expired' || filter === 'unlabelled') {
     return building.status === filter
@@ -294,12 +292,14 @@ function downloadCsv(
   rows: Municipality[],
   areaScope: AreaScope,
   ownershipScope: OwnershipScope,
+  entityMode: 'buildings' | 'properties',
 ) {
-  const header = ['Kommune', 'CVR', 'Kommunekode', ...YEARS]
+  const header = ['Kommune', 'CVR', 'Kommunekode', 'Enhed', ...YEARS]
   const lines = rows.map((row) => [
     row.name,
     row.cvr,
     row.municipalityCode,
+    entityMode === 'properties' ? 'Ejendomme (adressegrupper)' : 'Bygninger',
     ...YEARS.map((year) => row.metrics.buildings[year]),
   ].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(';'))
   const blob = new Blob([`\uFEFF${[header.join(';'), ...lines].join('\n')}`], { type: 'text/csv;charset=utf-8' })
@@ -311,7 +311,7 @@ function downloadCsv(
   const ownershipSuffix = ownershipScope === 'withCoowners'
     ? '-med-medejerskab'
     : '-direkte-ejerskab'
-  anchor.download = `udloebsplan-bygninger${scopeSuffix}${ownershipSuffix}-${dashboard.asOf}.csv`
+  anchor.download = `udloebsplan-${entityMode === 'properties' ? 'ejendomme' : 'bygninger'}${scopeSuffix}${ownershipSuffix}-${dashboard.asOf}.csv`
   anchor.click()
   URL.revokeObjectURL(url)
 }
@@ -327,6 +327,10 @@ export default function App() {
   const [selectedCvr, setSelectedCvr] = useState<string | null>(null)
   const [tableMode, setTableMode] = useState<TableMode>('year')
   const [chartMetric, setChartMetric] = useState<ChartMetric>('buildings')
+  const [entityMode, setEntityMode] = useState<'buildings' | 'properties'>('buildings')
+  const [propertyPayload, setPropertyPayload] = useState<unknown>(null)
+  const [propertyError, setPropertyError] = useState<string | null>(null)
+  const [propertyRetry, setPropertyRetry] = useState(0)
   const [buildingRows, setBuildingRows] = useState<BuildingRecord[]>([])
   const [buildingQuery, setBuildingQuery] = useState('')
   const [buildingCompanyFilter, setBuildingCompanyFilter] = useState('')
@@ -338,23 +342,70 @@ export default function App() {
   const [exportError, setExportError] = useState<string | null>(null)
   const expandedAreaScope = dashboard.expandedAreaScope
   const activeDashboard = DASHBOARD_SCOPES[areaScope][ownershipScope] ?? dashboard
-  const municipalities = activeDashboard.municipalities
+  const buildingDataDirectory = scopeDirectory('buildings', areaScope, ownershipScope)
+  const propertyData = useMemo(() => {
+    if (!propertyPayload) return null
+    try {
+      return { rows: parsePropertySummaries(propertyPayload, {
+        asOf: dashboard.asOf, generatedAt: dashboard.generatedAt,
+        directory: buildingDataDirectory,
+        cvrs: activeDashboard.municipalities.map((row) => row.cvr),
+      }), error: null }
+    } catch (error: unknown) {
+      return { rows: null, error: error instanceof Error ? error.message : 'Ejendomsdata kunne ikke læses' }
+    }
+  }, [activeDashboard, buildingDataDirectory, propertyPayload])
+  const propertyMode = entityMode === 'properties' && view === 'overview'
+  const countDataReady = !propertyMode || Boolean(propertyData?.rows)
+  const unitLabel = propertyMode ? 'ejendomme' : 'bygninger'
+  const formatUnits = (value: number) => `${numberFormat.format(value)} ${unitLabel}`
+  const municipalities = useMemo(() => activeDashboard.municipalities.map((row) => {
+    const property = propertyMode ? propertyData?.rows?.[row.cvr] : null
+    if (!property) return row
+    const counts = { ...row.metrics.buildings }
+    counts.expired = property.expired
+    for (const year of YEARS) counts[year] = property.expiry[year] ?? 0
+    return {
+      ...row, metrics: { ...row.metrics, buildings: counts },
+      unlabelled: { ...row.unlabelled, buildings: property.unlabelled },
+      missingLabel: { ...row.missingLabel, buildings: property.expired + property.unlabelled },
+      eligibleBuildings: property.total, validLabelBuildings: property.valid,
+    }
+  }), [activeDashboard, propertyData, propertyMode])
   const companyAnalysis = activeDashboard.companyAnalysis
   const companies = companyAnalysis?.companies ?? EMPTY_COMPANIES
   const [companyQuery, setCompanyQuery] = useState('')
   const [selectedCompanyName, setSelectedCompanyName] = useState(
     companies[0]?.name ?? '',
   )
-  const totals = activeDashboard.totals.buildings
+  const totals = useMemo(() => {
+    const counts = { ...activeDashboard.totals.buildings }
+    for (const bucket of ['expired', ...YEARS] as const) {
+      counts[bucket] = municipalities.reduce((sum, row) => sum + row.metrics.buildings[bucket], 0)
+    }
+    return counts
+  }, [activeDashboard, municipalities])
   const selectedMunicipality = municipalities.find((row) => row.cvr === selectedCvr)
   const summaryBuildings = selectedMunicipality?.metrics.buildings ?? totals
   const chartMetrics = selectedMunicipality?.metrics[chartMetric]
-    ?? activeDashboard.totals[chartMetric]
-  const buildingDataDirectory = scopeDirectory(
-    'buildings',
-    areaScope,
-    ownershipScope,
-  )
+    ?? (chartMetric === 'buildings' ? totals : activeDashboard.totals.area)
+
+  useEffect(() => {
+    if (!propertyMode || propertyPayload) return
+    const controller = new AbortController()
+    setPropertyError(null)
+    fetchDashboardAsset('property-summary.json', { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Ejendomsdata kunne ikke hentes (${response.status})`)
+        return response.json() as Promise<unknown>
+      })
+      .then(setPropertyPayload)
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setPropertyError(error instanceof Error ? error.message : 'Ejendomsdata kunne ikke hentes')
+      })
+    return () => controller.abort()
+  }, [propertyMode, propertyPayload, propertyRetry])
 
   useEffect(() => {
     if (!selectedCvr) {
@@ -401,6 +452,7 @@ export default function App() {
     buildingQuery,
     ownershipScope,
     selectedCvr,
+    entityMode,
   ])
 
   useEffect(() => {
@@ -483,6 +535,23 @@ export default function App() {
     })
   }, [buildingCompanyFilter, buildingFilter, buildingQuery, buildingRows])
 
+  const propertyRows = useMemo(() => groupProperties(buildingRows), [buildingRows])
+  const filteredPropertyRows = useMemo(() => {
+    const normalizedQuery = buildingQuery.trim().toLocaleLowerCase('da-DK')
+    return propertyRows.filter((property) => (
+      buildingMatchesFilter(property, buildingFilter)
+      && property.buildings.some((building) => (
+        (!buildingCompanyFilter || building.companyName === buildingCompanyFilter)
+        && (!normalizedQuery || [
+          building.address, building.postalCode, building.bfe, building.buildingNumber,
+          building.energyLabel, building.companyName ?? '', building.primaryOwner ?? '',
+        ].some((value) => value.toLocaleLowerCase('da-DK').includes(normalizedQuery)))
+      ))
+    ))
+  }, [propertyRows, buildingCompanyFilter, buildingFilter, buildingQuery])
+  const filteredUnitCount = propertyMode ? filteredPropertyRows.length : filteredBuildingRows.length
+  const totalUnitCount = propertyMode ? propertyRows.length : buildingRows.length
+
   const companySummary = useMemo(() => {
     const companies = new Map<string, { reports: Set<string>; buildings: number }>()
     buildingRows.forEach((building) => {
@@ -552,10 +621,10 @@ export default function App() {
     0,
   )
   const chartMetricLabel = chartMetric === 'buildings'
-    ? 'antal bygninger'
+    ? `antal ${unitLabel}`
     : 'samlet opvarmet BBR-areal'
   const formatChartValue = chartMetric === 'buildings'
-    ? formatBuildings
+    ? formatUnits
     : formatArea
   const timelineData: Array<{
     name: string
@@ -608,15 +677,15 @@ export default function App() {
       ? 'Mangler mærke'
       : horizonLabels[horizon]
   const tableTitle = tableMode === 'expired'
-    ? 'Kommuner med bygninger, hvor energimærket er udløbet'
+    ? `Kommuner med ${unitLabel}, hvor energimærket er udløbet`
     : tableMode === 'unlabelled'
-      ? 'Kommuner med bygninger uden fundet energimærke'
+      ? `Kommuner med ${unitLabel} uden fundet energimærke`
       : 'Kommuner med udløb i den valgte periode'
   const tableSummary = tableMode === 'expired'
-    ? `${municipalitiesWithExpiredLabels} kommuner · ${formatBuildings(totals.expired)} · mærket er udløbet`
+    ? `${municipalitiesWithExpiredLabels} kommuner · ${formatUnits(totals.expired)} · mærket er udløbet`
     : tableMode === 'unlabelled'
-      ? `${municipalitiesWithoutLabels} kommuner · ${formatBuildings(totalUnlabelledBuildings)} · intet mærke fundet`
-      : `${affectedMunicipalities} kommuner · ${formatBuildings(totals[horizon])} · Andel af bygninger i det valgte scenarie`
+      ? `${municipalitiesWithoutLabels} kommuner · ${formatUnits(totalUnlabelledBuildings)} · intet mærke fundet`
+      : `${affectedMunicipalities} kommuner · ${formatUnits(totals[horizon])} · Andel af ${unitLabel} i det valgte scenarie`
   const areaScopeLabel = AREA_SCOPE_LABELS[areaScope]
   const ownershipScopeLabel = ownershipScope === 'withCoowners'
     ? 'Direkte ejer og medejer'
@@ -684,10 +753,12 @@ export default function App() {
                 <Button
                   variant="secondary"
                   size="sm"
+                  disabled={!countDataReady}
                   onClick={() => downloadCsv(
                     filteredRows,
                     areaScope,
                     ownershipScope,
+                    propertyMode ? 'properties' : 'buildings',
                   )}
                 >
                   <Download size={14} /> Eksportér plan
@@ -730,6 +801,13 @@ export default function App() {
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
+            {view === 'overview' && <ScopeControl
+              label="Optælling"
+              ariaLabel="Vælg mellem bygninger og ejendomme"
+              value={entityMode}
+              options={[['buildings', 'Bygninger'], ['properties', 'Ejendomme']]}
+              onChange={(value) => setEntityMode(value as 'buildings' | 'properties')}
+            />}
             <ScopeControl
               label="Opvarmet BBR-areal"
               ariaLabel="Vælg interval for opvarmet BBR-areal"
@@ -754,11 +832,33 @@ export default function App() {
           </div>
         </section>}
 
+        {view === 'overview' && propertyMode && (
+          <section aria-label="Sådan tælles ejendomme" className="text-sm leading-6 text-slate-600">
+            <p><strong>Ejendomme = adressegrupper.</strong> Bygninger med samme adresse og postnummer
+              samles inden for hver kommune og den valgte afgrænsning — ikke efter juridisk BFE-ejendom.
+              Hver adresse tælles én gang: først under Mangler, hvis en bygning mangler mærke,
+              ellers Udløbet, hvis et mærke er udløbet, ellers ved det tidligste gyldige udløb.
+              Ukendte adresser holdes adskilt.</p>
+            <p className="mt-1 text-xs">Valget gælder nøgletal, antal i grafen, kommuneoversigt,
+              ejendomsliste og CSV-plan. Arealgraf, kort, ændringsrapport, firmaanalyse og Excel
+              viser fortsat bygningernes data.</p>
+            {!countDataReady && (propertyError || propertyData?.error
+              ? <div role="alert" className="mt-2 text-red-700">
+                  {propertyError || propertyData?.error}.{' '}
+                  <Button variant="secondary" size="sm" onClick={() => {
+                    setPropertyPayload(null)
+                    setPropertyRetry((value) => value + 1)
+                  }}>Prøv igen</Button>
+                </div>
+              : <p role="status" className="mt-2">Henter ejendomsoptælling…</p>)}
+          </section>
+        )}
+
         {view === 'market' && <MarketActivity />}
 
         {view === 'map' && (
           <MunicipalityMap
-            municipalities={municipalities}
+            municipalities={activeDashboard.municipalities}
             selectedCvr={selectedCvr}
             directory={buildingDataDirectory}
             asOf={dashboard.asOf}
@@ -774,7 +874,7 @@ export default function App() {
           />
         )}
 
-        <div hidden={view !== 'overview'} className={view === 'overview' ? 'flex flex-col gap-5' : undefined}>
+        <div hidden={view !== 'overview' || !countDataReady} className={view === 'overview' ? 'flex flex-col gap-5' : undefined}>
         <section
           aria-label={selectedMunicipality
             ? `Nøgletal for ${selectedMunicipality.name}`
@@ -784,7 +884,7 @@ export default function App() {
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløber i 2026"
-            value={formatBuildings(summaryBuildings['2026'])}
+            value={formatUnits(summaryBuildings['2026'])}
             note={selectedMunicipality?.name
               ?? `${municipalities.filter((row) => row.metrics.buildings['2026'] > 0).length} kommuner`}
             tone="orange"
@@ -794,7 +894,7 @@ export default function App() {
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløber i 2027"
-            value={formatBuildings(summaryBuildings['2027'])}
+            value={formatUnits(summaryBuildings['2027'])}
             note={selectedMunicipality?.name
               ?? `${municipalities.filter((row) => row.metrics.buildings['2027'] > 0).length} kommuner`}
             tone="yellow"
@@ -808,7 +908,7 @@ export default function App() {
               ? `${nextPeak} · ${numberFormat.format(summaryBuildings[nextPeak])}`
               : 'Ingen udløb'}
             note={hasUpcomingExpiry
-              ? selectedMunicipality?.name ?? 'bygninger, hvor energimærket udløber'
+              ? selectedMunicipality?.name ?? `${unitLabel}, hvor energimærket udløber`
               : `${selectedMunicipality ? `${selectedMunicipality.name} · ` : ''}2026–2037`}
             tone="green"
             active={hasUpcomingExpiry && tableMode === 'year' && horizon === nextPeak}
@@ -818,7 +918,7 @@ export default function App() {
           <DeadlineCard
             icon={<CalendarClock size={18} />}
             label="Udløbet mærke"
-            value={formatBuildings(summaryBuildings.expired)}
+            value={formatUnits(summaryBuildings.expired)}
             note={selectedMunicipality?.name ?? `${municipalitiesWithExpiredLabels} kommuner`}
             tone="orange"
             active={tableMode === 'expired'}
@@ -827,7 +927,7 @@ export default function App() {
           <DeadlineCard
             icon={<CircleAlert size={18} />}
             label="Mangler mærke"
-            value={formatBuildings(selectedMunicipality
+            value={formatUnits(selectedMunicipality
               ? unlabelledFor(selectedMunicipality)
               : totalUnlabelledBuildings)}
             note={`${selectedMunicipality?.name ?? `${municipalitiesWithoutLabels} kommuner`} · intet mærke fundet`}
@@ -840,7 +940,7 @@ export default function App() {
         <details className="group text-xs leading-5 text-slate-600">
           <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-600 [&::-webkit-details-marker]:hidden">
             <span>
-              {numberFormat.format(activeDashboard.quality.inventoryBuildings)} bygninger
+              {formatUnits(municipalities.reduce((sum, row) => sum + row.eligibleBuildings, 0))}
               {' · '}{areaScopeLabel}{' · '}{ownershipScopeLabel}
             </span>
             <span className="inline-flex items-center gap-1 font-medium text-blue-700">
@@ -912,7 +1012,7 @@ export default function App() {
                       }
                     }}
                   >
-                    <Download size={14} /> {exportLoading ? 'Henter Excel-udtræk…' : 'Hent Excel-udtræk'}
+                    <Download size={14} /> {exportLoading ? 'Henter Excel-udtræk…' : propertyMode ? 'Hent Excel · bygninger' : 'Hent Excel-udtræk'}
                   </Button>
                   <Button variant="secondary" size="sm" onClick={() => selectMunicipality(null)}>
                     Vis alle kommuner
@@ -925,7 +1025,7 @@ export default function App() {
                 aria-label="Vælg måleenhed for grafen"
               >
                 {([
-                  ['buildings', 'Bygninger'],
+                  ['buildings', propertyMode ? 'Ejendomme' : 'Bygninger'],
                   ['area', 'Opvarmet m²'],
                 ] as const).map(([value, label]) => (
                   <button
@@ -965,7 +1065,7 @@ export default function App() {
               />
               <Bar
                 dataKey="value"
-                name={chartMetric === 'buildings' ? 'Bygninger' : 'Opvarmet BBR-areal'}
+                name={chartMetric === 'buildings' ? propertyMode ? 'Ejendomme' : 'Bygninger' : 'Opvarmet BBR-areal'}
                 radius={[5, 5, 0, 0]}
                 maxBarSize={72}
                 minPointSize={3}
@@ -1202,12 +1302,12 @@ export default function App() {
             <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center">
               <div className="mr-auto">
                 <h2 className="text-[15px] font-semibold text-slate-900">
-                  {selectedMunicipality.name}: bygningsliste
+                  {selectedMunicipality.name}: {propertyMode ? 'ejendomsliste' : 'bygningsliste'}
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
                   {buildingLoading
                     ? 'Henter bygninger…'
-                    : `${numberFormat.format(filteredBuildingRows.length)} af ${numberFormat.format(buildingRows.length)} bygninger`}
+                    : `${numberFormat.format(filteredUnitCount)} af ${numberFormat.format(totalUnitCount)} ${unitLabel}`}
                 </p>
               </div>
               <div className="relative w-full lg:w-80">
@@ -1223,7 +1323,7 @@ export default function App() {
                 value={buildingFilter}
                 onChange={(event) => setBuildingFilter(event.target.value as BuildingFilter)}
               >
-                <option value="all">Alle bygninger</option>
+                <option value="all">{propertyMode ? 'Alle ejendomme' : 'Alle bygninger'}</option>
                 <option value="unlabelled">Mangler mærke</option>
                 <option value="expired">Udløbet mærke</option>
                 <option value="valid">Alle gyldige mærker</option>
@@ -1287,7 +1387,7 @@ export default function App() {
 
             {!buildingError && (
               <>
-                <div className="max-h-[620px] overflow-auto">
+                {propertyMode ? <PropertyList properties={filteredPropertyRows.slice(0, visibleBuildingCount)} /> : <div className="max-h-[620px] overflow-auto">
                   <table className="min-w-[1400px]">
                     <thead>
                       <tr>
@@ -1354,16 +1454,16 @@ export default function App() {
                         ))}
                     </tbody>
                   </table>
-                </div>
-                {!buildingLoading && filteredBuildingRows.length === 0 && (
+                </div>}
+                {!buildingLoading && filteredUnitCount === 0 && (
                   <div className="px-5 py-12 text-center text-sm text-slate-500">
-                    Ingen bygninger matcher søgningen og det valgte filter.
+                    Ingen {unitLabel} matcher søgningen og det valgte filter.
                   </div>
                 )}
-                {visibleBuildingCount < filteredBuildingRows.length && (
+                {visibleBuildingCount < filteredUnitCount && (
                   <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3">
                     <span className="text-xs text-slate-500">
-                      Viser {numberFormat.format(visibleBuildingCount)} af {numberFormat.format(filteredBuildingRows.length)}
+                      Viser {numberFormat.format(visibleBuildingCount)} af {numberFormat.format(filteredUnitCount)}
                     </span>
                     <Button
                       variant="secondary"
@@ -1408,7 +1508,7 @@ export default function App() {
               <thead>
                 <tr>
                   <SortableHeader label="Kommune" active={sortKey === 'name'} descending={sortDescending} onClick={() => setSort('name')} />
-                  <SortableHeader label={`Bygninger · ${horizon}`} active={sortKey === 'selected'} descending={sortDescending} onClick={() => setSort('selected')} align="right" />
+                  <SortableHeader label={`${propertyMode ? 'Ejendomme' : 'Bygninger'} · ${horizon}`} active={sortKey === 'selected'} descending={sortDescending} onClick={() => setSort('selected')} align="right" />
                   <SortableHeader label={`Andel · ${horizon}`} active={sortKey === 'share'} descending={sortDescending} onClick={() => setSort('share')} align="right" />
                   <SortableHeader label="Gyldige mærker" active={sortKey === 'valid'} descending={sortDescending} onClick={() => setSort('valid')} align="right" />
                   <SortableHeader label="Udløbet mærke" active={sortKey === 'expired'} descending={sortDescending} onClick={() => setSort('expired')} align="right" />
@@ -1433,11 +1533,11 @@ export default function App() {
                         </button>
                         <div className="text-[11px] text-slate-400">CVR {row.cvr} · kommunekode {row.municipalityCode}</div>
                       </td>
-                      <td className="num font-semibold text-slate-950">{formatBuildings(valueFor(row, horizon))}</td>
+                      <td className="num font-semibold text-slate-950">{formatUnits(valueFor(row, horizon))}</td>
                       <td className="num font-semibold text-blue-700">{percentageFormat.format(shareFor(row, horizon))}</td>
-                      <td className="num text-slate-500">{formatBuildings(row.validLabelBuildings)}</td>
-                      <td className="num font-semibold text-orange-700">{formatBuildings(expiredFor(row))}</td>
-                      <td className="num font-semibold text-red-700">{formatBuildings(unlabelledFor(row))}</td>
+                      <td className="num text-slate-500">{formatUnits(row.validLabelBuildings)}</td>
+                      <td className="num font-semibold text-orange-700">{formatUnits(expiredFor(row))}</td>
+                      <td className="num font-semibold text-red-700">{formatUnits(unlabelledFor(row))}</td>
                     </tr>
                   )
                 })}
@@ -1447,10 +1547,10 @@ export default function App() {
           {filteredRows.length === 0 && (
             <div className="px-5 py-12 text-center text-sm text-slate-500">
               {tableMode === 'expired'
-                ? 'Ingen kommuner har bygninger med et udløbet energimærke.'
+                ? `Ingen kommuner har ${unitLabel} med et udløbet energimærke.`
                 : tableMode === 'unlabelled'
-                  ? 'Ingen kommuner har bygninger uden et fundet energimærke.'
-                  : 'Ingen kommuner har bygninger, hvor energimærket udløber i den valgte periode.'}
+                  ? `Ingen kommuner har ${unitLabel} uden et fundet energimærke.`
+                  : `Ingen kommuner har ${unitLabel}, hvor energimærket udløber i den valgte periode.`}
             </div>
           )}
         </Card>

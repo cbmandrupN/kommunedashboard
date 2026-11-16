@@ -784,10 +784,10 @@ export default function App() {
         </nav>
 
         {view !== 'market' && <section
-          className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm lg:flex-row lg:items-center lg:justify-between"
+          className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm"
           aria-labelledby="scope-title"
         >
-          <div className="max-w-2xl">
+          <div className="max-w-4xl">
             <div className="flex flex-wrap items-center gap-2">
               <h2 id="scope-title" className="text-sm font-semibold text-slate-950">
                 Afgrænsning
@@ -800,7 +800,7 @@ export default function App() {
               Medejerskab kan tilvælges uafhængigt.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-end gap-3 lg:flex-nowrap lg:gap-6">
             {view === 'overview' && <ScopeControl
               label="Optælling"
               ariaLabel="Vælg mellem bygninger og ejendomme"
@@ -1582,7 +1582,7 @@ function ScopeControl({
 }) {
   return (
     <div className="min-w-0 max-w-full">
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+      <div className="mb-1.5 text-xs font-medium text-slate-600">
         {label}
       </div>
       <div
